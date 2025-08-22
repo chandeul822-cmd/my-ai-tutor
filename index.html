@@ -226,7 +226,7 @@
         </div>
     </div>
 
-    <!-- Firebase SDK 로드 -->
+    <!-- Firebase SDK 및 앱 로직 -->
     <script type="module">
         // Firebase SDK import
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -245,62 +245,6 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        // 전역 변수로 설정
-        window.db = db;
-        window.auth = auth;
-        window.addDoc = addDoc;
-        window.doc = doc;
-        window.updateDoc = updateDoc;
-        window.deleteDoc = deleteDoc;
-        window.collection = collection;
-        window.serverTimestamp = serverTimestamp;
-        window.getDoc = getDoc;
-        window.setDoc = setDoc;
-        window.appId = appId;
-        window.GoogleAuthProvider = GoogleAuthProvider;
-        window.signInWithPopup = signInWithPopup;
-        window.signOut = signOut;
-
-        let passagesUnsubscribe = null; // 스냅샷 리스너 구독 해제 함수
-
-        // 인증 상태 변경 감시
-        onAuthStateChanged(auth, async (user) => {
-            if (passagesUnsubscribe) {
-                passagesUnsubscribe(); // 이전 리스너 구독 해제
-            }
-
-            const passagesColPath = `artifacts/${appId}/public/data/passages`;
-            const passagesCol = collection(db, passagesColPath);
-            const q = query(passagesCol);
-
-            if (user) {
-                // 로그인된 사용자 (익명 포함)
-                const isTeacher = user.isAnonymous ? false : await window.checkIfTeacher(user.uid);
-                window.updateLoginUI(user, isTeacher);
-
-                // 로그인 성공 후 스냅샷 리스너 설정
-                passagesUnsubscribe = onSnapshot(q, (snapshot) => {
-                    let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
-                    window.documents = docs;
-                    window.renderDocumentCards();
-                }, (error) => {
-                    console.error("Snapshot listener 오류:", error);
-                    const docList = document.getElementById('document-list');
-                    docList.innerHTML = `<div class="text-center text-red-400 col-span-full">데이터를 불러오는 데 실패했습니다. 데이터베이스 규칙을 확인해주세요.</div>`;
-                });
-            } else {
-                 // 로그아웃 상태 -> 익명 로그인 시도
-                try {
-                    await signInAnonymously(auth);
-                } catch(error) {
-                    console.error("익명 로그인 재시도 실패:", error);
-                }
-            }
-        });
-    </script>
-
-    <script>
         let documents = []; // Firebase에서 받아온 데이터가 저장될 배열
         let currentDocIndex = -1;
         let currentStep = 1;
@@ -311,13 +255,6 @@
             factual: '사실성',
             divergent: '발산성',
             creative: '창의성'
-        };
-        
-        // --- 초기화 ---
-        window.onload = () => {
-            document.getElementById('teacher-login-btn').addEventListener('click', () => openTeacherCodeModal());
-            document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
-            document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
         };
         
         // --- 개인 학습 상태 관리 (localStorage) ---
@@ -372,7 +309,7 @@
         }
 
         // --- 학습용 모달 제어 ---
-        function openModal(docIndex) {
+        window.openModal = function(docIndex) {
             const modal = document.getElementById('modal');
             currentDocIndex = docIndex;
             const doc = window.documents[docIndex];
@@ -384,7 +321,7 @@
             goToStep(1);
         }
 
-        function closeModal() {
+        window.closeModal = function() {
             const modal = document.getElementById('modal');
             modal.classList.add('hidden');
             modal.classList.remove('flex');
@@ -396,7 +333,7 @@
             clearHighlights();
         }
         
-        function completeAndCloseModal() {
+        window.completeAndCloseModal = function() {
             if (currentDocIndex > -1) {
                 const docId = window.documents[currentDocIndex].id;
                 setCompletionStatus(docId);
@@ -406,13 +343,13 @@
         }
 
         // --- 선생님용 인증 및 UI ---
-        function openTeacherCodeModal() {
+        window.openTeacherCodeModal = function() {
             const modal = document.getElementById('teacher-code-modal');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
         }
 
-        function closeTeacherCodeModal() {
+        window.closeTeacherCodeModal = function() {
             const modal = document.getElementById('teacher-code-modal');
             modal.classList.add('hidden');
             modal.classList.remove('flex');
@@ -420,13 +357,13 @@
             document.getElementById('teacher-code-error').innerText = '';
         }
 
-        async function verifyTeacherCodeAndLogin() {
+        window.verifyTeacherCodeAndLogin = async function() {
             const input = document.getElementById('teacher-code-input').value;
             if (input === TEACHER_SECRET_CODE) {
                 closeTeacherCodeModal();
                 try {
-                    const provider = new window.GoogleAuthProvider();
-                    const result = await window.signInWithPopup(window.auth, provider);
+                    const provider = new GoogleAuthProvider();
+                    const result = await signInWithPopup(auth, provider);
                     const user = result.user;
                     await registerTeacherInFirestore(user);
                 } catch (error) {
@@ -439,13 +376,13 @@
         }
 
         async function registerTeacherInFirestore(user) {
-            const teacherDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/teachers`, user.uid);
-            await window.setDoc(teacherDocRef, { isTeacher: true });
+            const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, user.uid);
+            await setDoc(teacherDocRef, { isTeacher: true });
         }
 
         window.checkIfTeacher = async (uid) => {
-            const teacherDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/teachers`, uid);
-            const teacherDoc = await window.getDoc(teacherDocRef);
+            const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, uid);
+            const teacherDoc = await getDoc(teacherDocRef);
             return teacherDoc.exists();
         }
 
@@ -468,8 +405,7 @@
         }
 
         function handleTeacherLogout() {
-            window.signOut(window.auth)
-                .catch(error => console.error("로그아웃 오류:", error));
+            signOut(auth).catch(error => console.error("로그아웃 오류:", error));
         }
 
         function openTeacherDashboard() {
@@ -483,7 +419,7 @@
             renderManageList();
             resetForm();
         }
-        function closeTeacherDashboard() { 
+        window.closeTeacherDashboard = function() { 
             const modal = document.getElementById('teacher-dashboard-modal');
             modal.classList.add('hidden');
             modal.classList.remove('flex');
@@ -506,24 +442,24 @@
             });
         }
 
-        async function handleSaveDocument() {
+        window.handleSaveDocument = async function() {
             const title = document.getElementById('new-doc-title').value.trim();
             const passage = document.getElementById('new-doc-passage').value.trim();
             const docId = document.getElementById('edit-doc-id').value;
-            const passagesColPath = `artifacts/${window.appId}/public/data/passages`;
+            const passagesColPath = `artifacts/${appId}/public/data/passages`;
 
             if (!title || !passage) {
                 alert('제목과 내용을 모두 입력해주세요.');
                 return;
             }
 
-            const data = { title, passage, createdAt: window.serverTimestamp() };
+            const data = { title, passage, createdAt: serverTimestamp() };
 
             try {
                 if (docId) { // 수정
-                    await window.updateDoc(window.doc(window.db, passagesColPath, docId), { title, passage });
+                    await updateDoc(doc(db, passagesColPath, docId), { title, passage });
                 } else { // 추가
-                    await window.addDoc(window.collection(window.db, passagesColPath), data);
+                    await addDoc(collection(db, passagesColPath), data);
                 }
                 resetForm();
             } catch (error) {
@@ -532,21 +468,21 @@
             }
         }
 
-        function editDocument(docId) {
-            const doc = window.documents.find(d => d.id === docId);
-            if(doc) {
+        window.editDocument = function(docId) {
+            const docData = window.documents.find(d => d.id === docId);
+            if(docData) {
                 document.getElementById('form-title').innerText = '지문 수정';
-                document.getElementById('new-doc-title').value = doc.title;
-                document.getElementById('new-doc-passage').value = doc.passage;
-                document.getElementById('edit-doc-id').value = doc.id;
+                document.getElementById('new-doc-title').value = docData.title;
+                document.getElementById('new-doc-passage').value = docData.passage;
+                document.getElementById('edit-doc-id').value = docData.id;
             }
         }
 
-        async function deleteDocument(docId, title) {
+        window.deleteDocument = async function(docId, title) {
             if (confirm(`'${title}' 지문을 정말 삭제하시겠습니까?`)) {
                 try {
-                    const passagesColPath = `artifacts/${window.appId}/public/data/passages`;
-                    await window.deleteDoc(window.doc(window.db, passagesColPath, docId));
+                    const passagesColPath = `artifacts/${appId}/public/data/passages`;
+                    await deleteDoc(doc(db, passagesColPath, docId));
                 } catch (error) {
                     console.error("문서 삭제 오류:", error);
                     alert("문서 삭제 중 오류가 발생했습니다.");
@@ -562,7 +498,7 @@
         }
         
         // --- 스텝 네비게이션 ---
-        function goToStep(step) {
+        window.goToStep = function(step) {
             currentStep = step;
             const slider = document.getElementById('slider-container');
             slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
@@ -570,8 +506,8 @@
             clearHighlights();
         }
 
-        function nextStep() { if (currentStep < 3) goToStep(currentStep + 1); }
-        function prevStep() { if (currentStep > 1) goToStep(currentStep - 1); }
+        window.nextStep = function() { if (currentStep < 3) goToStep(currentStep + 1); }
+        window.prevStep = function() { if (currentStep > 1) goToStep(currentStep - 1); }
         
         // --- 텍스트 하이라이팅 ---
         function clearHighlights() {
@@ -598,7 +534,7 @@
         }
 
         // --- AI 피드백 ---
-        async function getFeedback(button) {
+        window.getFeedback = async function(button) {
             const stepElement = button.closest('.slider-item');
             const targetType = stepElement.dataset.type;
             const studentQuestion = stepElement.querySelector('textarea').value;
