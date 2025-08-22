@@ -269,13 +269,16 @@
                 passagesUnsubscribe(); // 이전 리스너 구독 해제
             }
 
+            const passagesColPath = `artifacts/${appId}/public/data/passages`;
+            const passagesCol = collection(db, passagesColPath);
+            const q = query(passagesCol);
+
             if (user) {
+                // 로그인된 사용자 (익명 포함)
                 const isTeacher = user.isAnonymous ? false : await window.checkIfTeacher(user.uid);
                 window.updateLoginUI(user, isTeacher);
 
-                const passagesColPath = `artifacts/${appId}/public/data/passages`;
-                const passagesCol = collection(db, passagesColPath);
-                const q = query(passagesCol); 
+                // 로그인 성공 후 스냅샷 리스너 설정
                 passagesUnsubscribe = onSnapshot(q, (snapshot) => {
                     let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
@@ -283,9 +286,16 @@
                     window.renderDocumentCards();
                 }, (error) => {
                     console.error("Snapshot listener 오류:", error);
+                    const docList = document.getElementById('document-list');
+                    docList.innerHTML = `<div class="text-center text-red-400 col-span-full">데이터를 불러오는 데 실패했습니다. 데이터베이스 규칙을 확인해주세요.</div>`;
                 });
             } else {
-                signInAnonymously(auth).catch(error => console.error("익명 로그인 재시도 실패:", error));
+                 // 로그아웃 상태 -> 익명 로그인 시도
+                try {
+                    await signInAnonymously(auth);
+                } catch(error) {
+                    console.error("익명 로그인 재시도 실패:", error);
+                }
             }
         });
     </script>
@@ -418,10 +428,10 @@
                     const provider = new window.GoogleAuthProvider();
                     const result = await window.signInWithPopup(window.auth, provider);
                     const user = result.user;
-                    // 로그인 성공 후, 교사로 등록
                     await registerTeacherInFirestore(user);
                 } catch (error) {
                     console.error("구글 로그인 또는 교사 등록 오류:", error);
+                    alert(`로그인에 실패했습니다: ${error.message}`);
                 }
             } else {
                 document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
