@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 질문 튜터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #111827; /* 다크 그레이 */
+            color: #E5E7EB;
+        }
+        .neon-green { color: #39FF14; }
+        .neon-blue { color: #00BFFF; }
+        .card-hover-effect {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card-hover-effect:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 25px -5px rgba(57, 255, 20, 0.2), 0 10px 10px -5px rgba(57, 255, 20, 0.1);
+        }
+        .card-hover-effect .icon-container {
+            transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+        }
+        .card-hover-effect:hover .icon-container {
+            transform: scale(1.3) rotate(-15deg);
+        }
+        .modal {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .modal-content {
+            animation: slideUp 0.4s ease-out;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .slider-container {
+            display: flex;
+            transition: transform 0.5s cubic-bezier(0.45, 0, 0.55, 1);
+        }
+        .slider-item {
+            min-width: 100%;
+            transition: opacity 0.5s ease;
+        }
+        .highlight {
+            background-color: rgba(57, 255, 20, 0.4);
+            padding: 2px 0;
+            border-radius: 3px;
+        }
+        /* 스크롤바 스타일 */
+        .scrollable-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scrollable-content::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        .scrollable-content::-webkit-scrollbar-thumb {
+            background-color: #4b5563;
+            border-radius: 10px;
+            border: 2px solid #1f2937;
+        }
+        /* 게이지 UI 스타일 */
+        .gauge-circle-bg {
+            fill: none;
+            stroke: #374151; /* gray-700 */
+            stroke-width: 3.8;
+        }
+        .gauge-circle-value {
+            fill: none;
+            stroke-width: 3.8;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 1s ease-in-out;
+        }
+        /* 드래그 앤 드롭 스타일 */
+        .dragging {
+            opacity: 0.5;
+        }
+        .drag-over-indicator {
+            border-top: 2px solid #39FF14; /* neon-green */
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="container mx-auto">
+        <header class="text-center mb-12 relative">
+            <h1 class="text-4xl sm:text-5xl font-bold mb-2">AI 질문 튜터</h1>
+            <p class="text-lg text-gray-400">학습 자료를 선택하고 깊이 있는 질문을 만들어보세요.</p>
+            <button id="teacher-mode-btn" class="absolute top-0 right-0 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                지문 관리(교사용)
+            </button>
+        </header>
+
+        <!-- 학습 자료 목록 -->
+        <div id="document-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- JS로 동적 생성 -->
+        </div>
+         <div id="no-documents" class="hidden text-center text-gray-400 mt-16">
+            <p class="text-2xl mb-4">학습할 지문이 없습니다.</p>
+            <p>'지문 관리(교사용)' 버튼을 눌러 새로운 지문을 추가해주세요.</p>
+        </div>
+    </div>
+
+    <!-- 학습용 팝업 모달 -->
+    <div id="modal" class="modal hidden fixed inset-0 bg-black bg-opacity-70 items-center justify-center p-4 z-40">
+        <div class="modal-content bg-gray-900 w-full h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <!-- 모달 헤더 -->
+            <div class="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0">
+                <h2 id="modal-title" class="text-xl font-bold"></h2>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <!-- 모달 바디 (2단 분할) -->
+            <div class="flex flex-grow overflow-hidden flex-col md:flex-row">
+                <!-- 왼쪽: 지문 전문 -->
+                <div class="w-full md:w-1/2 p-6 overflow-y-auto bg-gray-800/50 scrollable-content">
+                    <div id="modal-passage" class="text-gray-300 leading-relaxed whitespace-pre-wrap"></div>
+                </div>
+
+                <!-- 오른쪽: AI 튜터 -->
+                <div class="w-full md:w-1/2 p-6 flex flex-col bg-gray-900 overflow-hidden">
+                    <div class="flex justify-between items-center mb-4">
+                         <h3 class="text-2xl font-bold neon-green">질문 만들기</h3>
+                         <div id="step-indicator" class="font-bold text-gray-400"></div>
+                    </div>
+                    
+                    <div class="flex-grow overflow-hidden relative">
+                        <div id="slider-container" class="slider-container h-full">
+                            <!-- 스텝 1: 사실적 질문 -->
+                            <div class="slider-item p-2 flex flex-col" data-step="1" data-type="factual">
+                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content pr-2">
+                                    <h4 class="text-xl font-bold">1단계: 사실적 질문</h4>
+                                    <p class="text-gray-400">지문에 명시적으로 드러난 정보를 확인하는 질문을 만들어보세요.</p>
+                                    <textarea class="w-full h-24 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none flex-shrink-0" placeholder="여기에 사실적 질문을 입력하세요..."></textarea>
+                                    <button onclick="getFeedback(this)" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex-shrink-0">검토 및 피드백 받기</button>
+                                    <div class="feedback-container hidden space-y-3"></div>
+                                </div>
+                                <div class="mt-auto pt-4 flex justify-end flex-shrink-0">
+                                    <button onclick="nextStep()" class="next-btn hidden bg-gray-700 text-gray-400 font-bold py-2 px-6 rounded-lg">다음</button>
+                                </div>
+                            </div>
+                            <!-- 스텝 2: 발산적 질문 -->
+                            <div class="slider-item p-2 flex flex-col" data-step="2" data-type="divergent">
+                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content pr-2">
+                                    <h4 class="text-xl font-bold">2단계: 발산적 질문</h4>
+                                    <p class="text-gray-400">지문의 단서를 근거로 추론해야 답할 수 있는 질문을 만들어보세요.</p>
+                                    <textarea class="w-full h-24 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none flex-shrink-0" placeholder="여기에 발산적 질문을 입력하세요..."></textarea>
+                                    <button onclick="getFeedback(this)" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex-shrink-0">검토 및 피드백 받기</button>
+                                    <div class="feedback-container hidden space-y-3"></div>
+                                </div>
+                                <div class="mt-auto pt-4 flex justify-between flex-shrink-0">
+                                    <button onclick="prevStep()" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg">이전</button>
+                                    <button onclick="nextStep()" class="next-btn hidden bg-gray-700 text-gray-400 font-bold py-2 px-6 rounded-lg">다음</button>
+                                </div>
+                            </div>
+                            <!-- 스텝 3: 창의적 질문 -->
+                            <div class="slider-item p-2 flex flex-col" data-step="3" data-type="creative">
+                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content pr-2">
+                                    <h4 class="text-xl font-bold">3단계: 창의적 질문</h4>
+                                    <p class="text-gray-400">지문을 바탕으로 상상력을 더해야 답할 수 있는 질문을 만들어보세요.</p>
+                                    <textarea class="w-full h-24 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none flex-shrink-0" placeholder="여기에 창의적 질문을 입력하세요..."></textarea>
+                                    <button onclick="getFeedback(this)" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex-shrink-0">검토 및 피드백 받기</button>
+                                    <div class="feedback-container hidden space-y-3"></div>
+                                </div>
+                                <div class="mt-auto pt-4 flex justify-between flex-shrink-0">
+                                    <button onclick="prevStep()" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg">이전</button>
+                                    <button onclick="closeModal()" class="next-btn hidden bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg">완료</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 비밀번호 입력 모달 -->
+    <div id="password-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center z-50">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-sm">
+            <h2 class="text-2xl font-bold mb-4 text-center">선생님 모드</h2>
+            <p class="text-gray-400 mb-6 text-center">접속 코드를 입력하세요.</p>
+            <input type="password" id="password-input" class="w-full p-3 bg-gray-700 rounded-lg text-center focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="****">
+            <p id="password-error" class="text-red-400 text-center h-4 mt-2"></p>
+            <div class="flex gap-4 mt-4">
+                <button onclick="closePasswordModal()" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg transition-colors">취소</button>
+                <button onclick="checkPassword()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 지문 관리 대시보드 모달 -->
+    <div id="teacher-dashboard-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center p-4 z-50">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-4xl h-5/6 flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">지문 관리</h2>
+                <button onclick="closeTeacherDashboard()" class="text-gray-400 hover:text-white transition-colors">&times;</button>
+            </div>
+            <div class="flex-grow flex gap-8 overflow-hidden">
+                <!-- 새 지문 추가/수정 폼 -->
+                <div class="w-1/2 flex flex-col">
+                    <h3 id="form-title" class="text-xl font-bold mb-4">새 지문 추가</h3>
+                    <input type="hidden" id="edit-doc-index">
+                    <input type="text" id="new-doc-title" class="w-full p-3 bg-gray-700 rounded-lg mb-4 focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="지문 제목">
+                    <textarea id="new-doc-passage" class="w-full flex-grow p-3 bg-gray-700 rounded-lg mb-4 focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="지문 내용"></textarea>
+                    <button onclick="handleSaveDocument()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">저장하기</button>
+                </div>
+                <!-- 기존 지문 목록 -->
+                <div class="w-1/2 flex flex-col">
+                    <h3 class="text-xl font-bold mb-4">지문 목록</h3>
+                    <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4">
+                        <!-- JS로 동적 생성 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let documents = [];
+        let currentDocIndex = -1;
+        let currentStep = 1;
+        const TEACHER_CODE = '0822';
+
+        const typeTranslations = {
+            factual: '사실성',
+            divergent: '발산성',
+            creative: '창의성'
+        };
+        
+        // --- 초기화 ---
+        window.onload = () => {
+            loadDocuments();
+            renderDocumentCards();
+            document.getElementById('teacher-mode-btn').addEventListener('click', openPasswordModal);
+        };
+
+        // --- 지문 데이터 관리 (localStorage) ---
+        function loadDocuments() {
+            const storedDocs = localStorage.getItem('aiTutorDocuments');
+            if (storedDocs) {
+                documents = JSON.parse(storedDocs);
+            } else {
+                // 최초 접속 시 빈 배열로 시작
+                documents = [];
+            }
+        }
+
+        function saveDocuments() {
+            localStorage.setItem('aiTutorDocuments', JSON.stringify(documents));
+        }
+        
+        // --- 메인 화면 렌더링 ---
+        function renderDocumentCards() {
+            const listEl = document.getElementById('document-list');
+            const noDocsEl = document.getElementById('no-documents');
+            listEl.innerHTML = '';
+
+            if (documents.length === 0) {
+                noDocsEl.classList.remove('hidden');
+            } else {
+                noDocsEl.classList.add('hidden');
+                documents.forEach((doc, index) => {
+                    const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
+                    const card = `
+                        <div class="bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect" onclick="openModal(${index})">
+                            <div class="flex justify-between items-start mb-4">
+                                <h2 class="text-2xl font-bold">${doc.title}</h2>
+                                <div class="icon-container text-4xl text-green-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                </div>
+                            </div>
+                            <div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm">
+                                <p>${preview}</p>
+                            </div>
+                        </div>`;
+                    listEl.innerHTML += card;
+                });
+            }
+        }
+
+        // --- 학습용 모달 제어 ---
+        function openModal(docIndex) {
+            const modal = document.getElementById('modal');
+            currentDocIndex = docIndex;
+            const doc = documents[docIndex];
+            document.getElementById('modal-title').innerText = doc.title;
+            document.getElementById('modal-passage').innerText = doc.passage;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            goToStep(1);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = 'auto';
+            currentStep = 1;
+            document.querySelectorAll('.feedback-container').forEach(c => { c.innerHTML = ''; c.classList.add('hidden'); });
+            document.querySelectorAll('textarea').forEach(t => { t.value = '' });
+            document.querySelectorAll('.next-btn').forEach(b => { b.classList.add('hidden'); b.classList.add('text-gray-400'); b.classList.remove('text-white', 'bg-green-600', 'hover:bg-green-700'); });
+            clearHighlights();
+        }
+
+        // --- 선생님용 모달 제어 ---
+        function openPasswordModal() { 
+            const modal = document.getElementById('password-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+        function closePasswordModal() { 
+            const modal = document.getElementById('password-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.getElementById('password-input').value = ''; 
+            document.getElementById('password-error').innerText = ''; 
+        }
+        function checkPassword() {
+            const input = document.getElementById('password-input').value;
+            if (input === TEACHER_CODE) {
+                closePasswordModal();
+                openTeacherDashboard();
+            } else {
+                document.getElementById('password-error').innerText = '코드가 일치하지 않습니다.';
+            }
+        }
+        function openTeacherDashboard() {
+            const modal = document.getElementById('teacher-dashboard-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            renderManageList();
+            resetForm();
+        }
+        function closeTeacherDashboard() { 
+            const modal = document.getElementById('teacher-dashboard-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // --- 지문 관리 기능 ---
+        function renderManageList() {
+            const listEl = document.getElementById('manage-doc-list');
+            listEl.innerHTML = '';
+            documents.forEach((doc, index) => {
+                const item = document.createElement('div');
+                item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center cursor-move';
+                item.setAttribute('draggable', 'true');
+                item.setAttribute('data-index', index);
+                item.innerHTML = `
+                    <span class="truncate">${doc.title}</span>
+                    <div class="flex-shrink-0">
+                        <button onclick="editDocument(${index})" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button>
+                        <button onclick="deleteDocument(${index})" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button>
+                    </div>`;
+                listEl.appendChild(item);
+            });
+            addDragAndDropListeners();
+        }
+
+        function handleSaveDocument() {
+            const title = document.getElementById('new-doc-title').value.trim();
+            const passage = document.getElementById('new-doc-passage').value.trim();
+            const index = document.getElementById('edit-doc-index').value;
+
+            if (!title || !passage) {
+                alert('제목과 내용을 모두 입력해주세요.');
+                return;
+            }
+
+            if (index) { // 수정
+                documents[parseInt(index)] = { title, passage };
+            } else { // 추가
+                documents.push({ title, passage });
+            }
+
+            saveDocuments();
+            renderDocumentCards();
+            renderManageList();
+            resetForm();
+        }
+
+        function editDocument(index) {
+            const doc = documents[index];
+            document.getElementById('form-title').innerText = '지문 수정';
+            document.getElementById('new-doc-title').value = doc.title;
+            document.getElementById('new-doc-passage').value = doc.passage;
+            document.getElementById('edit-doc-index').value = index;
+        }
+
+        function deleteDocument(index) {
+            if (confirm(`'${documents[index].title}' 지문을 정말 삭제하시겠습니까?`)) {
+                documents.splice(index, 1);
+                saveDocuments();
+                renderDocumentCards();
+                renderManageList();
+            }
+        }
+
+        function resetForm() {
+            document.getElementById('form-title').innerText = '새 지문 추가';
+            document.getElementById('new-doc-title').value = '';
+            document.getElementById('new-doc-passage').value = '';
+            document.getElementById('edit-doc-index').value = '';
+        }
+        
+        // --- 드래그 앤 드롭 로직 ---
+        let dragStartIndex;
+
+        function addDragAndDropListeners() {
+            const draggables = document.querySelectorAll('#manage-doc-list > div[draggable="true"]');
+            const container = document.getElementById('manage-doc-list');
+
+            draggables.forEach(draggable => {
+                draggable.addEventListener('dragstart', dragStart);
+                draggable.addEventListener('dragend', dragEnd);
+            });
+
+            container.addEventListener('dragover', dragOver);
+            container.addEventListener('drop', drop);
+        }
+
+        function dragStart(e) {
+            // e.target이 버튼일 수 있으므로, 가장 가까운 draggable div를 찾습니다.
+            const target = e.target.closest('[draggable="true"]');
+            dragStartIndex = +target.getAttribute('data-index');
+            target.classList.add('dragging');
+        }
+
+        function dragEnd(e) {
+            const target = e.target.closest('[draggable="true"]');
+            target.classList.remove('dragging');
+            document.querySelectorAll('.drag-over-indicator').forEach(el => el.classList.remove('drag-over-indicator'));
+        }
+
+        function dragOver(e) {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(e.currentTarget, e.clientY);
+            document.querySelectorAll('.drag-over-indicator').forEach(el => el.classList.remove('drag-over-indicator'));
+            if (afterElement) {
+                afterElement.classList.add('drag-over-indicator');
+            }
+        }
+
+        function drop(e) {
+            e.preventDefault();
+            const container = e.currentTarget;
+            const afterElement = getDragAfterElement(container, e.clientY);
+            const dropIndex = afterElement ? +afterElement.getAttribute('data-index') : documents.length;
+
+            if (dragStartIndex === dropIndex) return;
+
+            const itemToMove = documents[dragStartIndex];
+            documents.splice(dragStartIndex, 1);
+
+            const finalDropIndex = dragStartIndex < dropIndex ? dropIndex - 1 : dropIndex;
+            documents.splice(finalDropIndex, 0, itemToMove);
+
+            saveDocuments();
+            renderDocumentCards();
+            renderManageList();
+        }
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('[draggable="true"]:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+
+        // --- 스텝 네비게이션 ---
+        function goToStep(step) {
+            currentStep = step;
+            const slider = document.getElementById('slider-container');
+            slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
+            document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
+            clearHighlights();
+        }
+
+        function nextStep() { if (currentStep < 3) goToStep(currentStep + 1); }
+        function prevStep() { if (currentStep > 1) goToStep(currentStep - 1); }
+        
+        // --- 텍스트 하이라이팅 ---
+        function clearHighlights() {
+            const passageEl = document.getElementById('modal-passage');
+            if (currentDocIndex >= 0 && documents[currentDocIndex]) {
+                passageEl.innerHTML = documents[currentDocIndex].passage.replace(/\n/g, '<br>');
+            }
+        }
+
+        function applyHighlights(hints) {
+            clearHighlights();
+            const passageEl = document.getElementById('modal-passage');
+            let passageText = passageEl.innerHTML;
+            const keywords = hints.flatMap(hint => {
+                const matches = hint.match(/“([^”]+)”|'([^']+)'/g);
+                return matches ? matches.map(m => m.replace(/“|”|'|'/g, '')) : [];
+            });
+            const uniqueKeywords = [...new Set(keywords)];
+            uniqueKeywords.forEach(keyword => {
+                const regex = new RegExp(keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g');
+                passageText = passageText.replace(regex, `<span class="highlight">${keyword}</span>`);
+            });
+            passageEl.innerHTML = passageText;
+        }
+
+        // --- AI 피드백 ---
+        async function getFeedback(button) {
+            const stepElement = button.closest('.slider-item');
+            const targetType = stepElement.dataset.type;
+            const studentQuestion = stepElement.querySelector('textarea').value;
+            const passage = documents[currentDocIndex].passage;
+            const feedbackContainer = stepElement.querySelector('.feedback-container');
+
+            if (!studentQuestion.trim()) {
+                feedbackContainer.innerHTML = `<p class="text-red-400">질문을 입력해주세요.</p>`;
+                feedbackContainer.classList.remove('hidden');
+                return;
+            }
+            
+            feedbackContainer.classList.remove('hidden');
+            feedbackContainer.innerHTML = `<div class="flex items-center justify-center space-x-2"><div class="w-4 h-4 rounded-full bg-green-400 animate-pulse"></div><p>AI 튜터가 피드백을 생성 중입니다...</p></div>`;
+
+            try {
+                const response = await callAIApi(passage, targetType, studentQuestion);
+                displayFeedback(response, stepElement);
+                applyHighlights(response.hints || []);
+            } catch (error) {
+                console.error("API Error:", error);
+                feedbackContainer.innerHTML = `<p class="text-red-400">오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>`;
+            }
+        }
+
+        async function callAIApi(passage, targetType, studentQuestion) {
+            // =================================================================
+            // 중요: 여기에 자신의 OpenAI API 키를 입력하세요.
+            // 경고: 이 키를 GitHub와 같은 공개된 장소에 올리면 안 됩니다.
+            // =================================================================
+            const OPENAI_API_KEY = "YOUR_OPENAI_API_KEY_HERE"; 
+
+            if (OPENAI_API_KEY === "YOUR_OPENAI_API_KEY_HERE" || !OPENAI_API_KEY) {
+                 console.error("OpenAI API 키가 설정되지 않았습니다.");
+                 return {
+                    predicted_type: "divergent",
+                    similarity: { factual: 0, divergent: 0, creative: 0 },
+                    rationale: "API 키가 설정되지 않았습니다. 코드에서 API 키를 입력해주세요.",
+                    hints: [], positive_feedback: "", improvement_tips: [], exemplar_questions: [], confidence: 0.1
+                };
+            }
+            
+            const apiUrl = 'https://api.openai.com/v1/chat/completions';
+            const system_prompt = `당신은 한국어로 응답하는 고등학교 1학년 대상 질문-유형 평가자다. 입력 글(passage)과 학생 질문을 바탕으로 질문이 세 유형(사실적/발산적/창의적)과 얼마나 유사한지 퍼센테이지로 산출하고, 목표 유형(target_type)에 맞춘 힌트와 피드백을 제공하라. 길게 사고 과정을 노출하지 말고, 간결한 근거만 제시하라.\n\n[유형 정의 — 고1 수준]\n1) 사실적 질문(Factual): 지문에 ‘명시적으로’ 제시된 정보만으로 답할 수 있다. 정답이 단일하거나 매우 분명하다.\n2) 발산적 질문(Divergent): 지문에 ‘근거가 되는 단서’가 있고, 단서를 연결·추론해야 답할 수 있다. 답이 하나 이상 가능할 수 있으나, 텍스트에 근거해야 한다.\n3) 창의적 질문(Creative): 지문을 ‘출발점’으로 삼아 상상·확장을 요구한다. 정답이 열려 있고, 가정/재구성/새로운 가능성 탐색이 포함될 수 있다.\n\n[채점 규칙]\n- 각 유형별 유사도는 0~100% 정수로 산출. 총합이 100이 아니어도 된다(독립 판정).\n- predicted_type는 세 유사도 중 가장 높은 유형으로 한다. 동률이면 target_type을 우선시한다.\n\n[피드백 생성 과정 및 규칙]\n1. **학생 질문 분석**: 학생 질문의 핵심 키워드와 의도를 파악한다. (예: "미국 국립적정기술센터가 정의한...")\n2. **지문과 비교 분석**:\n    - 질문의 키워드가 지문에 명시적으로 있는지, 추론의 근거가 있는지, 혹은 전혀 없는지 확인한다.\n    - 이 분석을 바탕으로, 학생의 질문이 왜 target_type과 유사도가 낮은지 구체적인 이유를 찾는다. (예: "질문의 키워드 '미국 국립적정기술센터'가 지문에 없어 사실 확인이 불가능함")\n3. **힌트 생성**:\n    - 분석 결과를 바탕으로, target_type에 맞는 사고 과정을 유도하는 힌트 2~3개를 제시한다.\n    - **힌트는 반드시 [passage]에 나오는 특정 단어나 문장을 직접 인용하거나 언급하며, 학생이 지문의 어느 부분에 집중해야 할지 명확히 알려주어야 한다.** (예: "'잎새에 이는 바람에도 나는 괴로워했다'는 구절을 보면 화자의 어떤 감정을 알 수 있을까요?")\n4. **개선점 제시 (유사도 < 70%일 경우)**:\n    - **학생의 질문과 [passage]의 내용을 직접적으로 연결하여 개선 방향을 구체적인 예시와 함께 제시해야 한다.**\n    - (예시): "현재 질문은 '화자의 감정'에 대해 막연하게 묻고 있습니다. 이를 지문의 '잎새에 이는 바람에도 나는 괴로워했다'는 구절과 연결하여, '화자는 왜 작은 바람에도 괴로워했을까?'와 같이 구체적인 상황에 대한 질문으로 발전시켜볼 수 있습니다."\n5. **질문 예시 생성**:\n    - 학생의 질문 품질과 관계없이, **항상 [passage]의 내용에 근거하여 [target_type]에 맞는 고품질 질문 예시 3개를 생성하라.**\n\n[출력 JSON 스키마(반드시 준수)]\n{\n  "predicted_type": "factual" | "divergent" | "creative",\n  "similarity": {\n    "factual": number, "divergent": number, "creative": number\n  },\n  "rationale": "간결 근거 1~2문장 (학생 질문과 지문을 비교 분석한 결과)",\n  "hints": ["힌트1", "힌트2", "힌트3"],\n  "positive_feedback": "유사도≥70%일 때만 작성, 아니면 빈 문자열",\n  "improvement_tips": ["tip1","tip2","tip3"],\n  "exemplar_questions": ["예시1","예시2","예시3"],\n  "confidence": 0.0~1.0\n}`;
+            const user_prompt = `다음 입력을 평가하라.\n[target_type]\n${targetType}\n\n[passage]\n${passage}\n\n[student_question]\n${studentQuestion}`;
+
+            const payload = {
+                model: "gpt-4-turbo",
+                messages: [
+                    { role: "system", content: system_prompt },
+                    { role: "user", content: user_prompt }
+                ],
+                response_format: { type: "json_object" }
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API 요청 실패: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.choices && result.choices[0].message && result.choices[0].message.content) {
+                    const jsonText = result.choices[0].message.content;
+                    return JSON.parse(jsonText);
+                } else {
+                     throw new Error("API 응답 형식이 올바르지 않습니다.");
+                }
+            } catch (error) {
+                console.error("API 호출 중 오류 발생:", error);
+                 return {
+                    predicted_type: "divergent",
+                    similarity: { factual: 0, divergent: 0, creative: 0 },
+                    rationale: "AI 피드백을 생성하는 데 실패했습니다. 네트워크 연결이나 API 키를 확인해주세요.",
+                    hints: [],
+                    positive_feedback: "",
+                    improvement_tips: [],
+                    exemplar_questions: [],
+                    confidence: 0.1
+                };
+            }
+        }
+
+        function displayFeedback(data, stepElement) {
+            const feedbackContainer = stepElement.querySelector('.feedback-container');
+            const targetType = stepElement.dataset.type;
+            const targetSimilarity = data.similarity[targetType];
+            
+            const gaugeColors = {
+                factual: 'stroke-green-400',
+                divergent: 'stroke-blue-400',
+                creative: 'stroke-purple-400'
+            };
+
+            let html = `<div class="space-y-4">`;
+            html += `
+                <div>
+                    <h5 class="font-bold mb-4">유사도 분석</h5>
+                    <div class="flex justify-around text-center">
+                        ${Object.entries(data.similarity).map(([type, value]) => `
+                            <div class="flex flex-col items-center">
+                                <div class="relative w-24 h-24">
+                                    <svg class="w-full h-full" viewBox="0 0 36 36">
+                                        <circle class="gauge-circle-bg" cx="18" cy="18" r="15.9155"></circle>
+                                        <circle class="gauge-circle-value ${gaugeColors[type]}"
+                                            cx="18" cy="18" r="15.9155"
+                                            stroke-dasharray="100"
+                                            stroke-dashoffset="100"
+                                            data-value="${value}">
+                                        </circle>
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center text-xl font-bold">
+                                        <span class="gauge-percent" data-value="${value}">0</span>%
+                                    </div>
+                                </div>
+                                <span class="mt-2 font-semibold">${typeTranslations[type] || type}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <p class="text-sm text-gray-400 mt-4 text-center"><strong>분석:</strong> ${data.rationale}</p>
+                </div>
+            `;
+
+            if (targetSimilarity >= 80) {
+                html += `
+                    <div>
+                        <h5 class="font-bold text-green-400">피드백</h5>
+                        <p class="bg-gray-800 p-3 rounded-lg">${data.positive_feedback}</p>
+                    </div>
+                `;
+                const nextBtn = stepElement.querySelector('.next-btn');
+                if(nextBtn) {
+                    nextBtn.classList.remove('hidden', 'bg-gray-700', 'text-gray-400');
+                    nextBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                }
+            } else {
+                html += `
+                    <div>
+                        <h5 class="font-bold text-yellow-400">힌트</h5>
+                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                            ${(data.hints || []).map(tip => `<li>${tip}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div>
+                        <h5 class="font-bold text-yellow-400">개선점</h5>
+                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                            ${(data.improvement_tips || []).map(tip => `<li>${tip}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            html += `
+                <div>
+                    <h5 class="font-bold">질문 예시</h5>
+                    <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                        ${(data.exemplar_questions || []).map(q => `<li>${q}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+
+            html += `</div>`;
+            feedbackContainer.innerHTML = html;
+
+            // Animate gauges
+            feedbackContainer.querySelectorAll('.gauge-circle-value').forEach(circle => {
+                const value = circle.dataset.value;
+                const circumference = 100; // Since r=15.9155, 2*pi*r is approx 100
+                const offset = circumference - value;
+                
+                setTimeout(() => {
+                    circle.style.strokeDashoffset = offset;
+                }, 100);
+            });
+
+            feedbackContainer.querySelectorAll('.gauge-percent').forEach(span => {
+                const targetValue = parseInt(span.dataset.value, 10);
+                let currentValue = 0;
+                const interval = setInterval(() => {
+                    if (currentValue >= targetValue) {
+                        clearInterval(interval);
+                        span.textContent = targetValue;
+                        return;
+                    }
+                    currentValue++;
+                    span.textContent = currentValue;
+                }, 10); // Adjust timing for smoother/faster animation
+            });
+        }
+    </script>
+
+</body>
+</html>
