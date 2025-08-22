@@ -276,11 +276,11 @@
             const completionStatus = getCompletionStatus();
             listEl.innerHTML = '';
 
-            if (window.documents.length === 0) {
+            if (documents.length === 0) {
                 noDocsEl.classList.remove('hidden');
             } else {
                 noDocsEl.classList.add('hidden');
-                window.documents.forEach((doc, index) => {
+                documents.forEach((doc, index) => {
                     const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
                     const isCompleted = completionStatus[doc.id] || false;
                     const checkIcon = isCompleted ? `
@@ -701,6 +701,14 @@
                 }, 10);
             });
         }
+
+        // --- 초기화 ---
+        document.addEventListener('DOMContentLoaded', () => {
+             // 이벤트 리스너는 DOM이 로드된 후에 설정
+            document.getElementById('teacher-login-btn').addEventListener('click', () => openTeacherCodeModal());
+            document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
+            document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
+        });
     </script>
 
 </body>
