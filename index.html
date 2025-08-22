@@ -139,7 +139,7 @@
                         <div id="slider-container" class="slider-container h-full">
                             <!-- 스텝 1: 사실적 질문 -->
                             <div class="slider-item p-2 flex flex-col" data-step="1" data-type="factual">
-                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content pr-2">
+                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content px-2">
                                     <h4 class="text-xl font-bold">1단계: 사실적 질문</h4>
                                     <p class="text-gray-400">지문에 명시적으로 드러난 정보를 확인하는 질문을 만들어보세요.</p>
                                     <textarea class="w-full h-24 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none flex-shrink-0" placeholder="여기에 사실적 질문을 입력하세요..."></textarea>
@@ -152,7 +152,7 @@
                             </div>
                             <!-- 스텝 2: 발산적 질문 -->
                             <div class="slider-item p-2 flex flex-col" data-step="2" data-type="divergent">
-                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content pr-2">
+                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content px-2">
                                     <h4 class="text-xl font-bold">2단계: 발산적 질문</h4>
                                     <p class="text-gray-400">지문의 단서를 근거로 추론해야 답할 수 있는 질문을 만들어보세요.</p>
                                     <textarea class="w-full h-24 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none flex-shrink-0" placeholder="여기에 발산적 질문을 입력하세요..."></textarea>
@@ -166,7 +166,7 @@
                             </div>
                             <!-- 스텝 3: 창의적 질문 -->
                             <div class="slider-item p-2 flex flex-col" data-step="3" data-type="creative">
-                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content pr-2">
+                                <div class="flex-grow space-y-4 overflow-y-auto scrollable-content px-2">
                                     <h4 class="text-xl font-bold">3단계: 창의적 질문</h4>
                                     <p class="text-gray-400">지문을 바탕으로 상상력을 더해야 답할 수 있는 질문을 만들어보세요.</p>
                                     <textarea class="w-full h-24 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none flex-shrink-0" placeholder="여기에 창의적 질문을 입력하세요..."></textarea>
@@ -175,7 +175,7 @@
                                 </div>
                                 <div class="mt-auto pt-4 flex justify-between flex-shrink-0">
                                     <button onclick="prevStep()" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg">이전</button>
-                                    <button onclick="closeModal()" class="next-btn hidden bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg">완료</button>
+                                    <button onclick="completeAndCloseModal()" class="next-btn hidden bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg">완료</button>
                                 </div>
                             </div>
                         </div>
@@ -249,7 +249,11 @@
         function loadDocuments() {
             const storedDocs = localStorage.getItem('aiTutorDocuments');
             if (storedDocs) {
-                documents = JSON.parse(storedDocs);
+                // 모든 문서에 'completed' 속성이 있는지 확인하고 없으면 추가
+                documents = JSON.parse(storedDocs).map(doc => ({
+                    ...doc,
+                    completed: doc.completed || false
+                }));
             } else {
                 // 최초 접속 시 빈 배열로 시작
                 documents = [];
@@ -272,10 +276,18 @@
                 noDocsEl.classList.add('hidden');
                 documents.forEach((doc, index) => {
                     const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
+                    const checkIcon = doc.completed ? `
+                        <svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                        </svg>` : '';
+
                     const card = `
                         <div class="bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect" onclick="openModal(${index})">
                             <div class="flex justify-between items-start mb-4">
-                                <h2 class="text-2xl font-bold">${doc.title}</h2>
+                                <div class="flex items-center">
+                                    <h2 class="text-2xl font-bold">${doc.title}</h2>
+                                    ${checkIcon}
+                                </div>
                                 <div class="icon-container text-4xl text-green-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                 </div>
@@ -312,6 +324,15 @@
             document.querySelectorAll('textarea').forEach(t => { t.value = ''; });
             document.querySelectorAll('.next-btn').forEach(b => { b.classList.add('hidden'); b.classList.add('text-gray-400'); b.classList.remove('text-white', 'bg-green-600', 'hover:bg-green-700'); });
             clearHighlights();
+        }
+        
+        function completeAndCloseModal() {
+            if (currentDocIndex > -1) {
+                documents[currentDocIndex].completed = true;
+                saveDocuments();
+                renderDocumentCards();
+            }
+            closeModal();
         }
 
         // --- 선생님용 모달 제어 ---
@@ -380,9 +401,9 @@
             }
 
             if (index) { // 수정
-                documents[parseInt(index)] = { title, passage };
+                documents[parseInt(index)] = { title, passage, completed: false }; // 수정 시 완료 상태 초기화
             } else { // 추가
-                documents.push({ title, passage });
+                documents.push({ title, passage, completed: false });
             }
 
             saveDocuments();
@@ -588,7 +609,7 @@
         function displayFeedback(data, stepElement) {
             const feedbackContainer = stepElement.querySelector('.feedback-container');
             const targetType = stepElement.dataset.type;
-            const targetSimilarity = data.similarity[targetType];
+            const targetSimilarity = data.similarity ? data.similarity[targetType] : 0;
             
             const gaugeColors = {
                 factual: 'stroke-green-400',
@@ -601,7 +622,7 @@
                 <div>
                     <h5 class="font-bold mb-4">유사도 분석</h5>
                     <div class="flex justify-around text-center">
-                        ${Object.entries(data.similarity).map(([type, value]) => `
+                        ${Object.entries(data.similarity || {}).map(([type, value]) => `
                             <div class="flex flex-col items-center">
                                 <div class="relative w-24 h-24">
                                     <svg class="w-full h-full" viewBox="0 0 36 36">
@@ -625,11 +646,19 @@
                 </div>
             `;
 
-            if (targetSimilarity >= 80) {
+            if (targetSimilarity >= 70) {
                 html += `
                     <div>
                         <h5 class="font-bold text-green-400">피드백</h5>
                         <p class="bg-gray-800 p-3 rounded-lg">${data.positive_feedback}</p>
+                    </div>
+                `;
+                html += `
+                    <div>
+                        <h5 class="font-bold">질문 예시</h5>
+                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                            ${(data.exemplar_questions || []).map(q => `<li>${q}</li>`).join('')}
+                        </ul>
                     </div>
                 `;
                 const nextBtn = stepElement.querySelector('.next-btn');
@@ -653,15 +682,6 @@
                     </div>
                 `;
             }
-            
-            html += `
-                <div>
-                    <h5 class="font-bold">질문 예시</h5>
-                    <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
-                        ${(data.exemplar_questions || []).map(q => `<li>${q}</li>`).join('')}
-                    </ul>
-                </div>
-            `;
 
             html += `</div>`;
             feedbackContainer.innerHTML = html;
