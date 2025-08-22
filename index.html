@@ -185,6 +185,20 @@
         </div>
     </div>
 
+    <!-- 교사 인증 코드 입력 모달 -->
+    <div id="teacher-code-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center z-50">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-sm">
+            <h2 class="text-2xl font-bold mb-4 text-center">교사 인증</h2>
+            <p class="text-gray-400 mb-6 text-center">교사용 인증 코드를 입력하세요.</p>
+            <input type="password" id="teacher-code-input" class="w-full p-3 bg-gray-700 rounded-lg text-center focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="****">
+            <p id="teacher-code-error" class="text-red-400 text-center h-4 mt-2"></p>
+            <div class="flex gap-4 mt-4">
+                <button onclick="closeTeacherCodeModal()" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg transition-colors">취소</button>
+                <button onclick="verifyTeacherCodeAndLogin()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">인증 및 로그인</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 지문 관리 대시보드 모달 -->
     <div id="teacher-dashboard-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center p-4 z-50">
         <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-4xl h-5/6 flex flex-col">
@@ -216,7 +230,7 @@
     <script type="module">
         // Firebase SDK import
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         // 환경 변수에서 Firebase 설정 정보 불러오기
@@ -241,6 +255,7 @@
         window.collection = collection;
         window.serverTimestamp = serverTimestamp;
         window.getDoc = getDoc;
+        window.setDoc = setDoc;
         window.appId = appId;
         window.GoogleAuthProvider = GoogleAuthProvider;
         window.signInWithPopup = signInWithPopup;
@@ -255,11 +270,9 @@
             }
 
             if (user) {
-                // 로그인된 사용자 (익명 포함)
                 const isTeacher = user.isAnonymous ? false : await window.checkIfTeacher(user.uid);
                 window.updateLoginUI(user, isTeacher);
 
-                // 로그인 성공 후 스냅샷 리스너 설정
                 const passagesColPath = `artifacts/${appId}/public/data/passages`;
                 const passagesCol = collection(db, passagesColPath);
                 const q = query(passagesCol); 
@@ -272,7 +285,6 @@
                     console.error("Snapshot listener 오류:", error);
                 });
             } else {
-                // 로그아웃 상태 -> 익명 로그인 시도
                 signInAnonymously(auth).catch(error => console.error("익명 로그인 재시도 실패:", error));
             }
         });
@@ -283,6 +295,7 @@
         let currentDocIndex = -1;
         let currentStep = 1;
         let isTeacher = false;
+        const TEACHER_SECRET_CODE = '0822'; // 교사 인증 코드
 
         const typeTranslations = {
             factual: '사실성',
@@ -292,8 +305,7 @@
         
         // --- 초기화 ---
         window.onload = () => {
-            // 이벤트 리스너는 전역 스코프에 한 번만 설정
-            document.getElementById('teacher-login-btn').addEventListener('click', handleTeacherLogin);
+            document.getElementById('teacher-login-btn').addEventListener('click', () => openTeacherCodeModal());
             document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
             document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
         };
@@ -384,6 +396,43 @@
         }
 
         // --- 선생님용 인증 및 UI ---
+        function openTeacherCodeModal() {
+            const modal = document.getElementById('teacher-code-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeTeacherCodeModal() {
+            const modal = document.getElementById('teacher-code-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.getElementById('teacher-code-input').value = '';
+            document.getElementById('teacher-code-error').innerText = '';
+        }
+
+        async function verifyTeacherCodeAndLogin() {
+            const input = document.getElementById('teacher-code-input').value;
+            if (input === TEACHER_SECRET_CODE) {
+                closeTeacherCodeModal();
+                try {
+                    const provider = new window.GoogleAuthProvider();
+                    const result = await window.signInWithPopup(window.auth, provider);
+                    const user = result.user;
+                    // 로그인 성공 후, 교사로 등록
+                    await registerTeacherInFirestore(user);
+                } catch (error) {
+                    console.error("구글 로그인 또는 교사 등록 오류:", error);
+                }
+            } else {
+                document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
+            }
+        }
+
+        async function registerTeacherInFirestore(user) {
+            const teacherDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/teachers`, user.uid);
+            await window.setDoc(teacherDocRef, { isTeacher: true });
+        }
+
         window.checkIfTeacher = async (uid) => {
             const teacherDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/teachers`, uid);
             const teacherDoc = await window.getDoc(teacherDocRef);
@@ -395,21 +444,17 @@
             const loginBtn = document.getElementById('teacher-login-btn');
             const teacherInfo = document.getElementById('teacher-info');
             const teacherName = document.getElementById('teacher-name');
+            const manageBtn = document.getElementById('manage-btn');
             
             if (user && !user.isAnonymous) {
                 loginBtn.style.display = 'none';
                 teacherInfo.style.display = 'flex';
                 teacherName.textContent = user.displayName || '선생님';
+                manageBtn.style.display = isTeacher ? 'block' : 'none';
             } else {
                 loginBtn.style.display = 'block';
                 teacherInfo.style.display = 'none';
             }
-        }
-
-        function handleTeacherLogin() {
-            const provider = new window.GoogleAuthProvider();
-            window.signInWithPopup(window.auth, provider)
-                .catch(error => console.error("구글 로그인 오류:", error));
         }
 
         function handleTeacherLogout() {
