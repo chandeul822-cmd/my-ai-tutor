@@ -80,13 +80,6 @@
             transform-origin: 50% 50%;
             transition: stroke-dashoffset 1s ease-in-out;
         }
-        /* 드래그 앤 드롭 스타일 */
-        .dragging {
-            opacity: 0.5;
-        }
-        .drag-over-indicator {
-            border-top: 2px solid #39FF14; /* neon-green */
-        }
     </style>
 </head>
 <body class="p-4 sm:p-8">
@@ -95,9 +88,16 @@
         <header class="text-center mb-12 relative">
             <h1 class="text-4xl sm:text-5xl font-bold mb-2">AI 질문 튜터</h1>
             <p class="text-lg text-gray-400">학습 자료를 선택하고 깊이 있는 질문을 만들어보세요.</p>
-            <button id="teacher-mode-btn" class="absolute top-0 right-0 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                지문 관리(교사용)
-            </button>
+            <div id="auth-container" class="absolute top-0 right-0">
+                <button id="teacher-login-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                    교사 로그인
+                </button>
+                <div id="teacher-info" class="hidden items-center">
+                    <span id="teacher-name" class="mr-4"></span>
+                    <button id="manage-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mr-2">지문 관리</button>
+                    <button id="teacher-logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">로그아웃</button>
+                </div>
+            </div>
         </header>
 
         <!-- 학습 자료 목록 -->
@@ -106,7 +106,7 @@
         </div>
          <div id="no-documents" class="hidden text-center text-gray-400 mt-16">
             <p class="text-2xl mb-4">학습할 지문이 없습니다.</p>
-            <p>'지문 관리(교사용)' 버튼을 눌러 새로운 지문을 추가해주세요.</p>
+            <p>교사 계정으로 로그인하여 지문을 추가해주세요.</p>
         </div>
     </div>
 
@@ -185,20 +185,6 @@
         </div>
     </div>
 
-    <!-- 비밀번호 입력 모달 -->
-    <div id="password-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center z-50">
-        <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-sm">
-            <h2 class="text-2xl font-bold mb-4 text-center">선생님 모드</h2>
-            <p class="text-gray-400 mb-6 text-center">접속 코드를 입력하세요.</p>
-            <input type="password" id="password-input" class="w-full p-3 bg-gray-700 rounded-lg text-center focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="****">
-            <p id="password-error" class="text-red-400 text-center h-4 mt-2"></p>
-            <div class="flex gap-4 mt-4">
-                <button onclick="closePasswordModal()" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg transition-colors">취소</button>
-                <button onclick="checkPassword()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">확인</button>
-            </div>
-        </div>
-    </div>
-
     <!-- 지문 관리 대시보드 모달 -->
     <div id="teacher-dashboard-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center p-4 z-50">
         <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-4xl h-5/6 flex flex-col">
@@ -210,7 +196,7 @@
                 <!-- 새 지문 추가/수정 폼 -->
                 <div class="w-1/2 flex flex-col">
                     <h3 id="form-title" class="text-xl font-bold mb-4">새 지문 추가</h3>
-                    <input type="hidden" id="edit-doc-index">
+                    <input type="hidden" id="edit-doc-id">
                     <input type="text" id="new-doc-title" class="w-full p-3 bg-gray-700 rounded-lg mb-4 focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="지문 제목">
                     <textarea id="new-doc-passage" class="w-full flex-grow p-3 bg-gray-700 rounded-lg mb-4 focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="지문 내용"></textarea>
                     <button onclick="handleSaveDocument()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">저장하기</button>
@@ -226,11 +212,77 @@
         </div>
     </div>
 
+    <!-- Firebase SDK 로드 -->
+    <script type="module">
+        // Firebase SDK import
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        // 환경 변수에서 Firebase 설정 정보 불러오기
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : { apiKey: "FALLBACK_API_KEY", /* ...기타 폴백 설정 */ };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // Firebase 앱 초기화
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // 전역 변수로 설정
+        window.db = db;
+        window.auth = auth;
+        window.addDoc = addDoc;
+        window.doc = doc;
+        window.updateDoc = updateDoc;
+        window.deleteDoc = deleteDoc;
+        window.collection = collection;
+        window.serverTimestamp = serverTimestamp;
+        window.getDoc = getDoc;
+        window.appId = appId;
+        window.GoogleAuthProvider = GoogleAuthProvider;
+        window.signInWithPopup = signInWithPopup;
+        window.signOut = signOut;
+
+        let passagesUnsubscribe = null; // 스냅샷 리스너 구독 해제 함수
+
+        // 인증 상태 변경 감시
+        onAuthStateChanged(auth, async (user) => {
+            if (passagesUnsubscribe) {
+                passagesUnsubscribe(); // 이전 리스너 구독 해제
+            }
+
+            if (user) {
+                // 로그인된 사용자 (익명 포함)
+                const isTeacher = user.isAnonymous ? false : await window.checkIfTeacher(user.uid);
+                window.updateLoginUI(user, isTeacher);
+
+                // 로그인 성공 후 스냅샷 리스너 설정
+                const passagesColPath = `artifacts/${appId}/public/data/passages`;
+                const passagesCol = collection(db, passagesColPath);
+                const q = query(passagesCol); 
+                passagesUnsubscribe = onSnapshot(q, (snapshot) => {
+                    let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+                    window.documents = docs;
+                    window.renderDocumentCards();
+                }, (error) => {
+                    console.error("Snapshot listener 오류:", error);
+                });
+            } else {
+                // 로그아웃 상태 -> 익명 로그인 시도
+                signInAnonymously(auth).catch(error => console.error("익명 로그인 재시도 실패:", error));
+            }
+        });
+    </script>
+
     <script>
-        let documents = [];
+        let documents = []; // Firebase에서 받아온 데이터가 저장될 배열
         let currentDocIndex = -1;
         let currentStep = 1;
-        const TEACHER_CODE = '0822';
+        let isTeacher = false;
 
         const typeTranslations = {
             factual: '사실성',
@@ -240,43 +292,39 @@
         
         // --- 초기화 ---
         window.onload = () => {
-            loadDocuments();
-            renderDocumentCards();
-            document.getElementById('teacher-mode-btn').addEventListener('click', openPasswordModal);
+            // 이벤트 리스너는 전역 스코프에 한 번만 설정
+            document.getElementById('teacher-login-btn').addEventListener('click', handleTeacherLogin);
+            document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
+            document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
         };
-
-        // --- 지문 데이터 관리 (localStorage) ---
-        function loadDocuments() {
-            const storedDocs = localStorage.getItem('aiTutorDocuments');
-            if (storedDocs) {
-                // 모든 문서에 'completed' 속성이 있는지 확인하고 없으면 추가
-                documents = JSON.parse(storedDocs).map(doc => ({
-                    ...doc,
-                    completed: doc.completed || false
-                }));
-            } else {
-                // 최초 접속 시 빈 배열로 시작
-                documents = [];
-            }
-        }
-
-        function saveDocuments() {
-            localStorage.setItem('aiTutorDocuments', JSON.stringify(documents));
-        }
         
+        // --- 개인 학습 상태 관리 (localStorage) ---
+        function getCompletionStatus() {
+            const status = localStorage.getItem('aiTutorCompletion');
+            return status ? JSON.parse(status) : {};
+        }
+
+        function setCompletionStatus(docId) {
+            const status = getCompletionStatus();
+            status[docId] = true;
+            localStorage.setItem('aiTutorCompletion', JSON.stringify(status));
+        }
+
         // --- 메인 화면 렌더링 ---
-        function renderDocumentCards() {
+        window.renderDocumentCards = function() {
             const listEl = document.getElementById('document-list');
             const noDocsEl = document.getElementById('no-documents');
+            const completionStatus = getCompletionStatus();
             listEl.innerHTML = '';
 
-            if (documents.length === 0) {
+            if (window.documents.length === 0) {
                 noDocsEl.classList.remove('hidden');
             } else {
                 noDocsEl.classList.add('hidden');
-                documents.forEach((doc, index) => {
+                window.documents.forEach((doc, index) => {
                     const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
-                    const checkIcon = doc.completed ? `
+                    const isCompleted = completionStatus[doc.id] || false;
+                    const checkIcon = isCompleted ? `
                         <svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                         </svg>` : '';
@@ -305,7 +353,7 @@
         function openModal(docIndex) {
             const modal = document.getElementById('modal');
             currentDocIndex = docIndex;
-            const doc = documents[docIndex];
+            const doc = window.documents[docIndex];
             document.getElementById('modal-title').innerText = doc.title;
             document.getElementById('modal-passage').innerText = doc.passage;
             modal.classList.remove('hidden');
@@ -328,36 +376,52 @@
         
         function completeAndCloseModal() {
             if (currentDocIndex > -1) {
-                documents[currentDocIndex].completed = true;
-                saveDocuments();
+                const docId = window.documents[currentDocIndex].id;
+                setCompletionStatus(docId);
                 renderDocumentCards();
             }
             closeModal();
         }
 
-        // --- 선생님용 모달 제어 ---
-        function openPasswordModal() { 
-            const modal = document.getElementById('password-modal');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+        // --- 선생님용 인증 및 UI ---
+        window.checkIfTeacher = async (uid) => {
+            const teacherDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/teachers`, uid);
+            const teacherDoc = await window.getDoc(teacherDocRef);
+            return teacherDoc.exists();
         }
-        function closePasswordModal() { 
-            const modal = document.getElementById('password-modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-            document.getElementById('password-input').value = ''; 
-            document.getElementById('password-error').innerText = ''; 
-        }
-        function checkPassword() {
-            const input = document.getElementById('password-input').value;
-            if (input === TEACHER_CODE) {
-                closePasswordModal();
-                openTeacherDashboard();
+
+        window.updateLoginUI = (user, isTeacherStatus) => {
+            isTeacher = isTeacherStatus;
+            const loginBtn = document.getElementById('teacher-login-btn');
+            const teacherInfo = document.getElementById('teacher-info');
+            const teacherName = document.getElementById('teacher-name');
+            
+            if (user && !user.isAnonymous) {
+                loginBtn.style.display = 'none';
+                teacherInfo.style.display = 'flex';
+                teacherName.textContent = user.displayName || '선생님';
             } else {
-                document.getElementById('password-error').innerText = '코드가 일치하지 않습니다.';
+                loginBtn.style.display = 'block';
+                teacherInfo.style.display = 'none';
             }
         }
+
+        function handleTeacherLogin() {
+            const provider = new window.GoogleAuthProvider();
+            window.signInWithPopup(window.auth, provider)
+                .catch(error => console.error("구글 로그인 오류:", error));
+        }
+
+        function handleTeacherLogout() {
+            window.signOut(window.auth)
+                .catch(error => console.error("로그아웃 오류:", error));
+        }
+
         function openTeacherDashboard() {
+            if (!isTeacher) {
+                alert("교사 계정으로 로그인해야 지문을 관리할 수 있습니다.");
+                return;
+            }
             const modal = document.getElementById('teacher-dashboard-modal');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -370,62 +434,68 @@
             modal.classList.remove('flex');
         }
 
-        // --- 지문 관리 기능 ---
+        // --- 지문 관리 기능 (Firebase 연동) ---
         function renderManageList() {
             const listEl = document.getElementById('manage-doc-list');
             listEl.innerHTML = '';
-            documents.forEach((doc, index) => {
+            window.documents.forEach((doc) => {
                 const item = document.createElement('div');
-                item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center cursor-move';
-                item.setAttribute('draggable', 'true');
-                item.setAttribute('data-index', index);
+                item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
                 item.innerHTML = `
                     <span class="truncate">${doc.title}</span>
                     <div class="flex-shrink-0">
-                        <button onclick="editDocument(${index})" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button>
-                        <button onclick="deleteDocument(${index})" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button>
+                        <button onclick="editDocument('${doc.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button>
+                        <button onclick="deleteDocument('${doc.id}', '${doc.title}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button>
                     </div>`;
                 listEl.appendChild(item);
             });
-            addDragAndDropListeners();
         }
 
-        function handleSaveDocument() {
+        async function handleSaveDocument() {
             const title = document.getElementById('new-doc-title').value.trim();
             const passage = document.getElementById('new-doc-passage').value.trim();
-            const index = document.getElementById('edit-doc-index').value;
+            const docId = document.getElementById('edit-doc-id').value;
+            const passagesColPath = `artifacts/${window.appId}/public/data/passages`;
 
             if (!title || !passage) {
                 alert('제목과 내용을 모두 입력해주세요.');
                 return;
             }
 
-            if (index) { // 수정
-                documents[parseInt(index)] = { title, passage, completed: false }; // 수정 시 완료 상태 초기화
-            } else { // 추가
-                documents.push({ title, passage, completed: false });
+            const data = { title, passage, createdAt: window.serverTimestamp() };
+
+            try {
+                if (docId) { // 수정
+                    await window.updateDoc(window.doc(window.db, passagesColPath, docId), { title, passage });
+                } else { // 추가
+                    await window.addDoc(window.collection(window.db, passagesColPath), data);
+                }
+                resetForm();
+            } catch (error) {
+                console.error("문서 저장 오류:", error);
+                alert("문서 저장 중 오류가 발생했습니다.");
             }
-
-            saveDocuments();
-            renderDocumentCards();
-            renderManageList();
-            resetForm();
         }
 
-        function editDocument(index) {
-            const doc = documents[index];
-            document.getElementById('form-title').innerText = '지문 수정';
-            document.getElementById('new-doc-title').value = doc.title;
-            document.getElementById('new-doc-passage').value = doc.passage;
-            document.getElementById('edit-doc-index').value = index;
+        function editDocument(docId) {
+            const doc = window.documents.find(d => d.id === docId);
+            if(doc) {
+                document.getElementById('form-title').innerText = '지문 수정';
+                document.getElementById('new-doc-title').value = doc.title;
+                document.getElementById('new-doc-passage').value = doc.passage;
+                document.getElementById('edit-doc-id').value = doc.id;
+            }
         }
 
-        function deleteDocument(index) {
-            if (confirm(`'${documents[index].title}' 지문을 정말 삭제하시겠습니까?`)) {
-                documents.splice(index, 1);
-                saveDocuments();
-                renderDocumentCards();
-                renderManageList();
+        async function deleteDocument(docId, title) {
+            if (confirm(`'${title}' 지문을 정말 삭제하시겠습니까?`)) {
+                try {
+                    const passagesColPath = `artifacts/${window.appId}/public/data/passages`;
+                    await window.deleteDoc(window.doc(window.db, passagesColPath, docId));
+                } catch (error) {
+                    console.error("문서 삭제 오류:", error);
+                    alert("문서 삭제 중 오류가 발생했습니다.");
+                }
             }
         }
 
@@ -433,79 +503,9 @@
             document.getElementById('form-title').innerText = '새 지문 추가';
             document.getElementById('new-doc-title').value = '';
             document.getElementById('new-doc-passage').value = '';
-            document.getElementById('edit-doc-index').value = '';
+            document.getElementById('edit-doc-id').value = '';
         }
         
-        // --- 드래그 앤 드롭 로직 ---
-        let dragStartIndex;
-
-        function addDragAndDropListeners() {
-            const draggables = document.querySelectorAll('#manage-doc-list > div[draggable="true"]');
-            const container = document.getElementById('manage-doc-list');
-
-            draggables.forEach(draggable => {
-                draggable.addEventListener('dragstart', dragStart);
-                draggable.addEventListener('dragend', dragEnd);
-            });
-
-            container.addEventListener('dragover', dragOver);
-            container.addEventListener('drop', drop);
-        }
-
-        function dragStart(e) {
-            const target = e.target.closest('[draggable="true"]');
-            dragStartIndex = +target.getAttribute('data-index');
-            target.classList.add('dragging');
-        }
-
-        function dragEnd(e) {
-            const target = e.target.closest('[draggable="true"]');
-            target.classList.remove('dragging');
-            document.querySelectorAll('.drag-over-indicator').forEach(el => el.classList.remove('drag-over-indicator'));
-        }
-
-        function dragOver(e) {
-            e.preventDefault();
-            const afterElement = getDragAfterElement(e.currentTarget, e.clientY);
-            document.querySelectorAll('.drag-over-indicator').forEach(el => el.classList.remove('drag-over-indicator'));
-            if (afterElement) {
-                afterElement.classList.add('drag-over-indicator');
-            }
-        }
-
-        function drop(e) {
-            e.preventDefault();
-            const container = e.currentTarget;
-            const afterElement = getDragAfterElement(container, e.clientY);
-            const dropIndex = afterElement ? +afterElement.getAttribute('data-index') : documents.length;
-
-            if (dragStartIndex === dropIndex) return;
-
-            const itemToMove = documents[dragStartIndex];
-            documents.splice(dragStartIndex, 1);
-
-            const finalDropIndex = dragStartIndex < dropIndex ? dropIndex - 1 : dropIndex;
-            documents.splice(finalDropIndex, 0, itemToMove);
-
-            saveDocuments();
-            renderDocumentCards();
-            renderManageList();
-        }
-
-        function getDragAfterElement(container, y) {
-            const draggableElements = [...container.querySelectorAll('[draggable="true"]:not(.dragging)')];
-            return draggableElements.reduce((closest, child) => {
-                const box = child.getBoundingClientRect();
-                const offset = y - box.top - box.height / 2;
-                if (offset < 0 && offset > closest.offset) {
-                    return { offset: offset, element: child };
-                } else {
-                    return closest;
-                }
-            }, { offset: Number.NEGATIVE_INFINITY }).element;
-        }
-
-
         // --- 스텝 네비게이션 ---
         function goToStep(step) {
             currentStep = step;
@@ -521,8 +521,8 @@
         // --- 텍스트 하이라이팅 ---
         function clearHighlights() {
             const passageEl = document.getElementById('modal-passage');
-            if (currentDocIndex >= 0 && documents[currentDocIndex]) {
-                passageEl.innerHTML = documents[currentDocIndex].passage.replace(/\n/g, '<br>');
+            if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
+                passageEl.innerHTML = window.documents[currentDocIndex].passage.replace(/\n/g, '<br>');
             }
         }
 
@@ -547,7 +547,7 @@
             const stepElement = button.closest('.slider-item');
             const targetType = stepElement.dataset.type;
             const studentQuestion = stepElement.querySelector('textarea').value;
-            const passage = documents[currentDocIndex].passage;
+            const passage = window.documents[currentDocIndex].passage;
             const feedbackContainer = stepElement.querySelector('.feedback-container');
 
             if (!studentQuestion.trim()) {
@@ -570,7 +570,6 @@
         }
 
         async function callAIApi(passage, targetType, studentQuestion) {
-            // Netlify 서버 함수를 호출하는 방식으로 변경
             try {
                 const response = await fetch('/.netlify/functions/get-feedback', {
                     method: 'POST',
@@ -689,7 +688,7 @@
             // Animate gauges
             feedbackContainer.querySelectorAll('.gauge-circle-value').forEach(circle => {
                 const value = circle.dataset.value;
-                const circumference = 100; // Since r=15.9155, 2*pi*r is approx 100
+                const circumference = 100;
                 const offset = circumference - value;
                 
                 setTimeout(() => {
@@ -708,7 +707,7 @@
                     }
                     currentValue++;
                     span.textContent = currentValue;
-                }, 10); // Adjust timing for smoother/faster animation
+                }, 10);
             });
         }
     </script>
