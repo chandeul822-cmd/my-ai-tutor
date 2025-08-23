@@ -169,7 +169,7 @@
         // Firebase SDK import
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         // --- App ID (전역 스코프로 이동하여 문제 해결) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -317,20 +317,9 @@
 
         const verifyTeacherCodeAndLogin = async () => {
             if (document.getElementById('teacher-code-input').value === TEACHER_SECRET_CODE) {
-                closeTeacherCodeModal();
-                try {
-                    const provider = new GoogleAuthProvider();
-                    await signInWithPopup(auth, provider);
-                } catch (error) {
-                    console.error("Google Sign-In Error:", error);
-                    const errorEl = document.getElementById('teacher-code-error');
-                    openTeacherCodeModal(); // 모달을 다시 열어서 에러 메시지 표시
-                    if (error.code === 'auth/unauthorized-domain') {
-                        errorEl.innerText = '로그인 도메인 문제입니다. 관리자에게 문의하세요.';
-                    } else {
-                        errorEl.innerText = '로그인 중 오류가 발생했습니다.';
-                    }
-                }
+                // 인증 코드가 맞으면 바로 리디렉션 시작
+                const provider = new GoogleAuthProvider();
+                await signInWithRedirect(auth, provider);
             } else {
                 document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
             }
@@ -563,8 +552,18 @@
             document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
             document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
             
-            let initialAuthDone = false;
+            // 리디렉션 후 돌아왔을 때 결과 처리
+            getRedirectResult(auth)
+                .then(async (result) => {
+                    if (result && result.user) {
+                        // 성공적으로 로그인됨. onAuthStateChanged가 후속 처리
+                    }
+                })
+                .catch((error) => {
+                    console.error("Redirect Result Error:", error);
+                });
 
+            let initialAuthDone = false;
             onAuthStateChanged(auth, async (user) => {
                 if (!initialAuthDone) {
                     initialAuthDone = true;
@@ -610,9 +609,6 @@
                         documents = allPassages;
                         renderDocumentCards();
                     } catch (error) {
-                        // 참고: 여기서 "Missing or insufficient permissions" 오류가 발생한다면,
-                        // Firestore 보안 규칙이 잘못되었음을 의미합니다. 학생들이 모든 지문을 보려면
-                        // 'list' 작업을 허용하는 규칙이 필요합니다. 함께 제공된 설명을 참고하여 규칙을 수정해주세요.
                         console.error("Firestore Permission Error:", error);
                         const listEl = document.getElementById('document-list');
                         const noDocsEl = document.getElementById('no-documents');
