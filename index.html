@@ -226,20 +226,37 @@
         </div>
     </div>
 
-    <script>
-        // 전역 변수 설정
-        let documents = [];
+    <!-- Firebase SDK 및 앱 로직 -->
+    <script type="module">
+        // Firebase SDK import
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        // 환경 변수에서 Firebase 설정 정보 불러오기
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : { apiKey: "FALLBACK_API_KEY", /* ...기타 폴백 설정 */ };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // Firebase 앱 초기화
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let documents = []; // Firebase에서 받아온 데이터가 저장될 배열
         let currentDocIndex = -1;
         let currentStep = 1;
         let isTeacher = false;
-        const TEACHER_SECRET_CODE = '0822';
+        const TEACHER_SECRET_CODE = '0822'; // 교사 인증 코드
 
         const typeTranslations = {
             factual: '사실성',
             divergent: '발산성',
             creative: '창의성'
         };
-
+        
         // --- 개인 학습 상태 관리 (localStorage) ---
         function getCompletionStatus() {
             const status = localStorage.getItem('aiTutorCompletion');
@@ -252,80 +269,8 @@
             localStorage.setItem('aiTutorCompletion', JSON.stringify(status));
         }
 
-        // --- 교사 로그인 관련 함수들 ---
-        function openTeacherCodeModal() {
-            const modal = document.getElementById('teacher-code-modal');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-        }
-
-        function closeTeacherCodeModal() {
-            const modal = document.getElementById('teacher-code-modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-            document.getElementById('teacher-code-input').value = '';
-            document.getElementById('teacher-code-error').innerText = '';
-        }
-
-        function verifyTeacherCodeAndLogin() {
-            const input = document.getElementById('teacher-code-input').value;
-            if (input === TEACHER_SECRET_CODE) {
-                closeTeacherCodeModal();
-                // 간단한 교사 상태 저장 (실제 구현에서는 더 안전한 방법 사용)
-                localStorage.setItem('isTeacher', 'true');
-                localStorage.setItem('teacherName', '교사');
-                updateLoginUI(true, '교사');
-                alert('교사 인증이 완료되었습니다!');
-            } else {
-                document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
-            }
-        }
-
-        function updateLoginUI(isTeacherStatus, teacherName) {
-            isTeacher = isTeacherStatus;
-            const loginBtn = document.getElementById('teacher-login-btn');
-            const teacherInfo = document.getElementById('teacher-info');
-            const teacherNameEl = document.getElementById('teacher-name');
-            
-            if (isTeacherStatus) {
-                loginBtn.style.display = 'none';
-                teacherInfo.style.display = 'flex';
-                teacherInfo.classList.remove('hidden');
-                teacherNameEl.textContent = teacherName || '교사';
-            } else {
-                loginBtn.style.display = 'block';
-                teacherInfo.style.display = 'none';
-                teacherInfo.classList.add('hidden');
-            }
-        }
-
-        function handleTeacherLogout() {
-            localStorage.removeItem('isTeacher');
-            localStorage.removeItem('teacherName');
-            updateLoginUI(false, '');
-            alert('로그아웃되었습니다.');
-        }
-
-        function openTeacherDashboard() {
-            if (!isTeacher) {
-                alert("교사 계정으로 로그인해야 지문을 관리할 수 있습니다.");
-                return;
-            }
-            const modal = document.getElementById('teacher-dashboard-modal');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-            renderManageList();
-            resetForm();
-        }
-
-        function closeTeacherDashboard() {
-            const modal = document.getElementById('teacher-dashboard-modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        }
-
         // --- 메인 화면 렌더링 ---
-        function renderDocumentCards() {
+        window.renderDocumentCards = function() {
             const listEl = document.getElementById('document-list');
             const noDocsEl = document.getElementById('no-documents');
             const completionStatus = getCompletionStatus();
@@ -363,11 +308,128 @@
             }
         }
 
-        // --- 지문 관리 기능 ---
+        // --- 학습용 모달 제어 ---
+        window.openModal = function(docIndex) {
+            const modal = document.getElementById('modal');
+            currentDocIndex = docIndex;
+            const doc = window.documents[docIndex];
+            document.getElementById('modal-title').innerText = doc.title;
+            document.getElementById('modal-passage').innerText = doc.passage;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            goToStep(1);
+        }
+
+        window.closeModal = function() {
+            const modal = document.getElementById('modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = 'auto';
+            currentStep = 1;
+            document.querySelectorAll('.feedback-container').forEach(c => { c.innerHTML = ''; c.classList.add('hidden'); });
+            document.querySelectorAll('textarea').forEach(t => { t.value = ''; });
+            document.querySelectorAll('.next-btn').forEach(b => { b.classList.add('hidden'); b.classList.add('text-gray-400'); b.classList.remove('text-white', 'bg-green-600', 'hover:bg-green-700'); });
+            clearHighlights();
+        }
+        
+        window.completeAndCloseModal = function() {
+            if (currentDocIndex > -1) {
+                const docId = window.documents[currentDocIndex].id;
+                setCompletionStatus(docId);
+                renderDocumentCards();
+            }
+            closeModal();
+        }
+
+        // --- 선생님용 인증 및 UI ---
+        window.openTeacherCodeModal = function() {
+            const modal = document.getElementById('teacher-code-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        window.closeTeacherCodeModal = function() {
+            const modal = document.getElementById('teacher-code-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.getElementById('teacher-code-input').value = '';
+            document.getElementById('teacher-code-error').innerText = '';
+        }
+
+        window.verifyTeacherCodeAndLogin = async function() {
+            const input = document.getElementById('teacher-code-input').value;
+            if (input === TEACHER_SECRET_CODE) {
+                closeTeacherCodeModal();
+                try {
+                    const provider = new GoogleAuthProvider();
+                    const result = await signInWithPopup(auth, provider);
+                    const user = result.user;
+                    await registerTeacherInFirestore(user);
+                } catch (error) {
+                    console.error("구글 로그인 또는 교사 등록 오류:", error);
+                    alert(`로그인에 실패했습니다: ${error.message}`);
+                }
+            } else {
+                document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
+            }
+        }
+
+        async function registerTeacherInFirestore(user) {
+            const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, user.uid);
+            await setDoc(teacherDocRef, { isTeacher: true });
+        }
+
+        window.checkIfTeacher = async (uid) => {
+            const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, uid);
+            const teacherDoc = await getDoc(teacherDocRef);
+            return teacherDoc.exists();
+        }
+
+        window.updateLoginUI = (user, isTeacherStatus) => {
+            isTeacher = isTeacherStatus;
+            const loginBtn = document.getElementById('teacher-login-btn');
+            const teacherInfo = document.getElementById('teacher-info');
+            const teacherName = document.getElementById('teacher-name');
+            const manageBtn = document.getElementById('manage-btn');
+            
+            if (user && !user.isAnonymous) {
+                loginBtn.style.display = 'none';
+                teacherInfo.style.display = 'flex';
+                teacherName.textContent = user.displayName || '선생님';
+                manageBtn.style.display = isTeacher ? 'block' : 'none';
+            } else {
+                loginBtn.style.display = 'block';
+                teacherInfo.style.display = 'none';
+            }
+        }
+
+        function handleTeacherLogout() {
+            signOut(auth).catch(error => console.error("로그아웃 오류:", error));
+        }
+
+        function openTeacherDashboard() {
+            if (!isTeacher) {
+                alert("교사 계정으로 로그인해야 지문을 관리할 수 있습니다.");
+                return;
+            }
+            const modal = document.getElementById('teacher-dashboard-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            renderManageList();
+            resetForm();
+        }
+        window.closeTeacherDashboard = function() { 
+            const modal = document.getElementById('teacher-dashboard-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // --- 지문 관리 기능 (Firebase 연동) ---
         function renderManageList() {
             const listEl = document.getElementById('manage-doc-list');
             listEl.innerHTML = '';
-            documents.forEach((doc) => {
+            window.documents.forEach((doc) => {
                 const item = document.createElement('div');
                 item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
                 item.innerHTML = `
@@ -380,43 +442,34 @@
             });
         }
 
-        function handleSaveDocument() {
+        window.handleSaveDocument = async function() {
             const title = document.getElementById('new-doc-title').value.trim();
             const passage = document.getElementById('new-doc-passage').value.trim();
             const docId = document.getElementById('edit-doc-id').value;
+            const passagesColPath = `artifacts/${appId}/public/data/passages`;
 
             if (!title || !passage) {
                 alert('제목과 내용을 모두 입력해주세요.');
                 return;
             }
 
-            if (docId) {
-                // 수정
-                const docIndex = documents.findIndex(d => d.id === docId);
-                if (docIndex !== -1) {
-                    documents[docIndex] = { ...documents[docIndex], title, passage };
-                }
-            } else {
-                // 추가
-                const newDoc = {
-                    id: Date.now().toString(),
-                    title,
-                    passage,
-                    createdAt: new Date()
-                };
-                documents.push(newDoc);
-            }
+            const data = { title, passage, createdAt: serverTimestamp() };
 
-            // localStorage에 저장
-            localStorage.setItem('documents', JSON.stringify(documents));
-            renderDocumentCards();
-            renderManageList();
-            resetForm();
-            alert('지문이 저장되었습니다.');
+            try {
+                if (docId) { // 수정
+                    await updateDoc(doc(db, passagesColPath, docId), { title, passage });
+                } else { // 추가
+                    await addDoc(collection(db, passagesColPath), data);
+                }
+                resetForm();
+            } catch (error) {
+                console.error("문서 저장 오류:", error);
+                alert("문서 저장 중 오류가 발생했습니다.");
+            }
         }
 
-        function editDocument(docId) {
-            const docData = documents.find(d => d.id === docId);
+        window.editDocument = function(docId) {
+            const docData = window.documents.find(d => d.id === docId);
             if(docData) {
                 document.getElementById('form-title').innerText = '지문 수정';
                 document.getElementById('new-doc-title').value = docData.title;
@@ -425,13 +478,15 @@
             }
         }
 
-        function deleteDocument(docId, title) {
+        window.deleteDocument = async function(docId, title) {
             if (confirm(`'${title}' 지문을 정말 삭제하시겠습니까?`)) {
-                documents = documents.filter(d => d.id !== docId);
-                localStorage.setItem('documents', JSON.stringify(documents));
-                renderDocumentCards();
-                renderManageList();
-                alert('지문이 삭제되었습니다.');
+                try {
+                    const passagesColPath = `artifacts/${appId}/public/data/passages`;
+                    await deleteDoc(doc(db, passagesColPath, docId));
+                } catch (error) {
+                    console.error("문서 삭제 오류:", error);
+                    alert("문서 삭제 중 오류가 발생했습니다.");
+                }
             }
         }
 
@@ -441,43 +496,9 @@
             document.getElementById('new-doc-passage').value = '';
             document.getElementById('edit-doc-id').value = '';
         }
-
-        // --- 학습용 모달 제어 ---
-        function openModal(docIndex) {
-            const modal = document.getElementById('modal');
-            currentDocIndex = docIndex;
-            const doc = documents[docIndex];
-            document.getElementById('modal-title').innerText = doc.title;
-            document.getElementById('modal-passage').innerText = doc.passage;
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-            document.body.style.overflow = 'hidden';
-            goToStep(1);
-        }
-
-        function closeModal() {
-            const modal = document.getElementById('modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-            document.body.style.overflow = 'auto';
-            currentStep = 1;
-            document.querySelectorAll('.feedback-container').forEach(c => { c.innerHTML = ''; c.classList.add('hidden'); });
-            document.querySelectorAll('textarea').forEach(t => { t.value = ''; });
-            document.querySelectorAll('.next-btn').forEach(b => { b.classList.add('hidden'); b.classList.add('text-gray-400'); b.classList.remove('text-white', 'bg-green-600', 'hover:bg-green-700'); });
-            clearHighlights();
-        }
         
-        function completeAndCloseModal() {
-            if (currentDocIndex > -1) {
-                const docId = documents[currentDocIndex].id;
-                setCompletionStatus(docId);
-                renderDocumentCards();
-            }
-            closeModal();
-        }
-
         // --- 스텝 네비게이션 ---
-        function goToStep(step) {
+        window.goToStep = function(step) {
             currentStep = step;
             const slider = document.getElementById('slider-container');
             slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
@@ -485,14 +506,14 @@
             clearHighlights();
         }
 
-        function nextStep() { if (currentStep < 3) goToStep(currentStep + 1); }
-        function prevStep() { if (currentStep > 1) goToStep(currentStep - 1); }
+        window.nextStep = function() { if (currentStep < 3) goToStep(currentStep + 1); }
+        window.prevStep = function() { if (currentStep > 1) goToStep(currentStep - 1); }
         
         // --- 텍스트 하이라이팅 ---
         function clearHighlights() {
             const passageEl = document.getElementById('modal-passage');
-            if (currentDocIndex >= 0 && documents[currentDocIndex]) {
-                passageEl.innerHTML = documents[currentDocIndex].passage.replace(/\n/g, '<br>');
+            if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
+                passageEl.innerHTML = window.documents[currentDocIndex].passage.replace(/\n/g, '<br>');
             }
         }
 
@@ -501,5 +522,194 @@
             const passageEl = document.getElementById('modal-passage');
             let passageText = passageEl.innerHTML;
             const keywords = hints.flatMap(hint => {
-                const matches = hint.match(/"([^"]+)"|'([^']+)'/g);
-                return matches ? matches.map(m
+                const matches = hint.match(/“([^”]+)”|'([^']+)'/g);
+                return matches ? matches.map(m => m.replace(/“|”|'|'/g, '')) : [];
+            });
+            const uniqueKeywords = [...new Set(keywords)];
+            uniqueKeywords.forEach(keyword => {
+                const regex = new RegExp(keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g');
+                passageText = passageText.replace(regex, `<span class="highlight">${keyword}</span>`);
+            });
+            passageEl.innerHTML = passageText;
+        }
+
+        // --- AI 피드백 ---
+        window.getFeedback = async function(button) {
+            const stepElement = button.closest('.slider-item');
+            const targetType = stepElement.dataset.type;
+            const studentQuestion = stepElement.querySelector('textarea').value;
+            const passage = window.documents[currentDocIndex].passage;
+            const feedbackContainer = stepElement.querySelector('.feedback-container');
+
+            if (!studentQuestion.trim()) {
+                feedbackContainer.innerHTML = `<p class="text-red-400">질문을 입력해주세요.</p>`;
+                feedbackContainer.classList.remove('hidden');
+                return;
+            }
+            
+            feedbackContainer.classList.remove('hidden');
+            feedbackContainer.innerHTML = `<div class="flex items-center justify-center space-x-2"><div class="w-4 h-4 rounded-full bg-green-400 animate-pulse"></div><p>AI 튜터가 피드백을 생성 중입니다...</p></div>`;
+
+            try {
+                const response = await callAIApi(passage, targetType, studentQuestion);
+                displayFeedback(response, stepElement);
+                applyHighlights(response.hints || []);
+            } catch (error) {
+                console.error("API Error:", error);
+                feedbackContainer.innerHTML = `<p class="text-red-400">오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>`;
+            }
+        }
+
+        async function callAIApi(passage, targetType, studentQuestion) {
+            try {
+                const response = await fetch('/.netlify/functions/get-feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ passage, targetType, studentQuestion })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `서버 요청 실패: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.choices && result.choices[0].message && result.choices[0].message.content) {
+                    const jsonText = result.choices[0].message.content;
+                    return JSON.parse(jsonText);
+                } else {
+                     throw new Error("API 응답 형식이 올바르지 않습니다.");
+                }
+            } catch (error) {
+                console.error("API 호출 중 오류 발생:", error);
+                 return {
+                    predicted_type: "divergent",
+                    similarity: { factual: 0, divergent: 0, creative: 0 },
+                    rationale: `AI 피드백 생성 중 오류가 발생했습니다: ${error.message}`,
+                    hints: [],
+                    positive_feedback: "",
+                    improvement_tips: [],
+                    exemplar_questions: [],
+                    confidence: 0.1
+                };
+            }
+        }
+
+        function displayFeedback(data, stepElement) {
+            const feedbackContainer = stepElement.querySelector('.feedback-container');
+            const targetType = stepElement.dataset.type;
+            const targetSimilarity = data.similarity ? data.similarity[targetType] : 0;
+            
+            const gaugeColors = {
+                factual: 'stroke-green-400',
+                divergent: 'stroke-blue-400',
+                creative: 'stroke-purple-400'
+            };
+
+            let html = `<div class="space-y-4">`;
+            html += `
+                <div>
+                    <h5 class="font-bold mb-4">유사도 분석</h5>
+                    <div class="flex justify-around text-center">
+                        ${Object.entries(data.similarity || {}).map(([type, value]) => `
+                            <div class="flex flex-col items-center">
+                                <div class="relative w-24 h-24">
+                                    <svg class="w-full h-full" viewBox="0 0 36 36">
+                                        <circle class="gauge-circle-bg" cx="18" cy="18" r="15.9155"></circle>
+                                        <circle class="gauge-circle-value ${gaugeColors[type]}"
+                                            cx="18" cy="18" r="15.9155"
+                                            stroke-dasharray="100"
+                                            stroke-dashoffset="100"
+                                            data-value="${value}">
+                                        </circle>
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center text-xl font-bold">
+                                        <span class="gauge-percent" data-value="${value}">0</span>%
+                                    </div>
+                                </div>
+                                <span class="mt-2 font-semibold">${typeTranslations[type] || type}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <p class="text-sm text-gray-400 mt-4 text-center"><strong>분석:</strong> ${data.rationale}</p>
+                </div>
+            `;
+
+            if (targetSimilarity >= 70) {
+                html += `
+                    <div>
+                        <h5 class="font-bold text-green-400">피드백</h5>
+                        <p class="bg-gray-800 p-3 rounded-lg">${data.positive_feedback}</p>
+                    </div>
+                `;
+                html += `
+                    <div>
+                        <h5 class="font-bold">질문 예시</h5>
+                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                            ${(data.exemplar_questions || []).map(q => `<li>${q}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                const nextBtn = stepElement.querySelector('.next-btn');
+                if(nextBtn) {
+                    nextBtn.classList.remove('hidden', 'bg-gray-700', 'text-gray-400');
+                    nextBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                }
+            } else {
+                html += `
+                    <div>
+                        <h5 class="font-bold text-yellow-400">힌트</h5>
+                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                            ${(data.hints || []).map(tip => `<li>${tip}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div>
+                        <h5 class="font-bold text-yellow-400">개선점</h5>
+                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
+                            ${(data.improvement_tips || []).map(tip => `<li>${tip}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            feedbackContainer.innerHTML = html;
+
+            // Animate gauges
+            feedbackContainer.querySelectorAll('.gauge-circle-value').forEach(circle => {
+                const value = circle.dataset.value;
+                const circumference = 100;
+                const offset = circumference - value;
+                
+                setTimeout(() => {
+                    circle.style.strokeDashoffset = offset;
+                }, 100);
+            });
+
+            feedbackContainer.querySelectorAll('.gauge-percent').forEach(span => {
+                const targetValue = parseInt(span.dataset.value, 10);
+                let currentValue = 0;
+                const interval = setInterval(() => {
+                    if (currentValue >= targetValue) {
+                        clearInterval(interval);
+                        span.textContent = targetValue;
+                        return;
+                    }
+                    currentValue++;
+                    span.textContent = currentValue;
+                }, 10);
+            });
+        }
+
+        // --- 초기화 ---
+        document.addEventListener('DOMContentLoaded', () => {
+             // 이벤트 리스너는 DOM이 로드된 후에 설정
+            document.getElementById('teacher-login-btn').addEventListener('click', () => openTeacherCodeModal());
+            document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
+            document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
+        });
+    </script>
+
+</body>
+</html>
