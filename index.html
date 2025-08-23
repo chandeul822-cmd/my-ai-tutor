@@ -318,18 +318,18 @@
         const verifyTeacherCodeAndLogin = async () => {
             const errorEl = document.getElementById('teacher-code-error');
             if (document.getElementById('teacher-code-input').value === TEACHER_SECRET_CODE) {
-                try {
-                    const provider = new GoogleAuthProvider();
-                    errorEl.innerText = 'Google 로그인 페이지로 이동합니다...';
-                    await signInWithRedirect(auth, provider);
-                } catch (error) {
-                    console.error("Redirect Sign-In Error:", error);
+                const provider = new GoogleAuthProvider();
+                errorEl.innerText = 'Google 로그인 페이지로 이동합니다...';
+                // signInWithRedirect는 페이지를 이동시키므로, 이후 코드는 실행되지 않음
+                // 오류는 getRedirectResult에서 처리
+                await signInWithRedirect(auth, provider).catch(error => {
+                    console.error("signInWithRedirect Error:", error);
                     if (error.code === 'auth/unauthorized-domain') {
                         errorEl.innerText = '승인되지 않은 도메인입니다. Firebase 설정을 확인하세요.';
                     } else {
                         errorEl.innerText = '로그인 중 오류가 발생했습니다.';
                     }
-                }
+                });
             } else {
                 errorEl.innerText = '인증 코드가 일치하지 않습니다.';
             }
@@ -564,13 +564,18 @@
             
             // 리디렉션 후 돌아왔을 때 결과 처리
             getRedirectResult(auth)
-                .then(async (result) => {
-                    if (result && result.user) {
-                        // 성공적으로 로그인됨. onAuthStateChanged가 후속 처리
-                    }
-                })
                 .catch((error) => {
                     console.error("Redirect Result Error:", error);
+                    const modal = document.getElementById('teacher-code-modal');
+                    const errorEl = document.getElementById('teacher-code-error');
+                    if (!modal.classList.contains('flex')) {
+                        openTeacherCodeModal();
+                    }
+                    if (error.code === 'auth/account-exists-with-different-credential') {
+                        errorEl.innerText = '다른 방식으로 로그인한 계정이 이미 존재합니다.';
+                    } else {
+                        errorEl.innerText = '로그인에 실패했습니다. 다시 시도해주세요.';
+                    }
                 });
 
             let initialAuthDone = false;
