@@ -171,24 +171,35 @@
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-        // 환경 변수에서 Firebase 설정 정보 불러오기
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : { apiKey: "FALLBACK_API_KEY", /* ...기타 폴백 설정 */ };
-        
+        // --- App ID (전역 스코프로 이동하여 문제 해결) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // Firebase 앱 초기화
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        // --- Firebase 초기화 (오류 처리 강화) ---
+        let app, db, auth;
+        try {
+            const firebaseConfig = typeof __firebase_config !== 'undefined' 
+                ? JSON.parse(__firebase_config) 
+                : { apiKey: "FALLBACK_API_KEY", projectId: "FALLBACK_PROJECT_ID" }; // 폴백 설정 추가
+            
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (error) {
+            console.error("Firebase 초기화 실패:", error);
+            document.body.innerHTML = `<div style="color: red; text-align: center; margin-top: 50px; padding: 20px;">
+                <h1>앱 초기화 오류</h1>
+                <p>앱을 시작하는 중 문제가 발생했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.</p>
+            </div>`;
+            // 오류 발생 시 이후 스크립트 실행을 막기 위해 여기서 에러를 다시 던짐
+            throw new Error("Firebase initialization failed, stopping script execution.");
+        }
 
-        let documents = []; // Firebase에서 받아온 데이터가 저장될 배열
-        window.documents = documents; // 전역 스코프에서도 접근 가능하도록 설정
+        let documents = [];
+        window.documents = documents;
         let currentDocIndex = -1;
         let currentStep = 1;
         let isTeacher = false;
-        const TEACHER_SECRET_CODE = '0822'; // 교사 인증 코드
+        const TEACHER_SECRET_CODE = '0822';
 
         const typeTranslations = {
             factual: '사실성',
@@ -196,7 +207,6 @@
             creative: '창의성'
         };
         
-        // --- 개인 학습 상태 관리 (localStorage) ---
         const getCompletionStatus = () => {
             const status = localStorage.getItem('aiTutorCompletion');
             return status ? JSON.parse(status) : {};
@@ -208,7 +218,6 @@
             localStorage.setItem('aiTutorCompletion', JSON.stringify(status));
         }
 
-        // --- 메인 화면 렌더링 ---
         const renderDocumentCards = () => {
             const listEl = document.getElementById('document-list');
             const noDocsEl = document.getElementById('no-documents');
@@ -222,75 +231,50 @@
                 documents.forEach((doc, index) => {
                     const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
                     const isCompleted = completionStatus[doc.id] || false;
-                    const checkIcon = isCompleted ? `
-                        <svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                        </svg>` : '';
-
+                    const checkIcon = isCompleted ? `<svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>` : '';
                     const card = document.createElement('div');
                     card.className = 'bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect';
                     card.addEventListener('click', () => openModal(index));
                     card.innerHTML = `
                         <div class="flex justify-between items-start mb-4">
-                            <div class="flex items-center">
-                                <h2 class="text-2xl font-bold">${doc.title}</h2>
-                                ${checkIcon}
-                            </div>
-                            <div class="icon-container text-4xl text-green-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                            </div>
+                            <div class="flex items-center"><h2 class="text-2xl font-bold">${doc.title}</h2>${checkIcon}</div>
+                            <div class="icon-container text-4xl text-green-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
                         </div>
-                        <div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm">
-                            <p>${preview}</p>
-                        </div>`;
+                        <div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm"><p>${preview}</p></div>`;
                     listEl.appendChild(card);
                 });
             }
         }
 
-        // --- 학습용 모달 제어 ---
-        // --- 슬라이더 생성 함수 (추가된 부분) ---
         function createSlider() {
             const sliderWrapper = document.getElementById('slider-wrapper');
-            sliderWrapper.innerHTML = ''; // 기존 내용 초기화
-
+            sliderWrapper.innerHTML = '';
             const sliderContainer = document.createElement('div');
             sliderContainer.id = 'slider-container';
             sliderContainer.className = 'slider-container h-full';
-
             const steps = [
                 { type: 'factual', title: '사실적 질문', description: '지문에 나온 정보를 바탕으로 내용을 확인하는 질문을 만들어보세요. (예: 누가, 언제, 어디서, 무엇을, 어떻게 했나요?)' },
                 { type: 'divergent', title: '발산적 질문', description: '지문 내용을 바탕으로 원인과 결과를 추론하거나, 다른 상황을 상상해보는 질문을 만들어보세요. (예: 왜 그랬을까요? 만약 ~했다면 어떻게 됐을까요?)' },
                 { type: 'creative', title: '창의적 질문', description: '지문 내용을 넘어 새로운 아이디어를 더하거나, 자신의 생각을 표현하는 질문을 만들어보세요. (예: 이 다음 이야기는 어떻게 될까요? 나라면 어떻게 했을까요?)' }
             ];
-
             steps.forEach((step, index) => {
                 const item = document.createElement('div');
                 item.className = 'slider-item flex flex-col h-full p-1';
                 item.dataset.type = step.type;
-                
-                let nextButtonHtml = '';
-                if (index < steps.length - 1) {
-                    nextButtonHtml = `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="nextStep()">다음 단계로</button>`;
-                } else {
-                    nextButtonHtml = `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="completeAndCloseModal()">학습 완료</button>`;
-                }
-
+                let nextButtonHtml = (index < steps.length - 1)
+                    ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
+                    : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
                 item.innerHTML = `
                     <div class="flex-grow flex flex-col">
                         <h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4>
                         <p class="text-sm text-gray-400 mb-4">${step.description}</p>
                         <textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea>
-                        <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="getFeedback(this)">AI 피드백 받기</button>
+                        <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button>
                         <div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div>
                     </div>
-                    <div class="flex-shrink-0">
-                        ${nextButtonHtml}
-                    </div>
-                `;
+                    <div class="flex-shrink-0">${nextButtonHtml}</div>`;
                 sliderContainer.appendChild(item);
             });
-
             sliderWrapper.appendChild(sliderContainer);
         }
 
@@ -300,9 +284,7 @@
             const doc = window.documents[docIndex];
             document.getElementById('modal-title').innerText = doc.title;
             document.getElementById('modal-passage').innerText = doc.passage;
-            
-            createSlider(); // 모달이 열릴 때 슬라이더 생성
-
+            createSlider();
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             document.body.style.overflow = 'hidden';
@@ -326,33 +308,26 @@
             closeModal();
         }
 
-        // --- 선생님용 인증 및 UI ---
         const openTeacherCodeModal = () => {
-            const modal = document.getElementById('teacher-code-modal');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+            document.getElementById('teacher-code-modal').classList.remove('hidden');
+            document.getElementById('teacher-code-modal').classList.add('flex');
         }
 
         const closeTeacherCodeModal = () => {
-            const modal = document.getElementById('teacher-code-modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
+            document.getElementById('teacher-code-modal').classList.add('hidden');
+            document.getElementById('teacher-code-modal').classList.remove('flex');
             document.getElementById('teacher-code-input').value = '';
             document.getElementById('teacher-code-error').innerText = '';
         }
 
         const verifyTeacherCodeAndLogin = async () => {
-            const input = document.getElementById('teacher-code-input').value;
-            if (input === TEACHER_SECRET_CODE) {
+            if (document.getElementById('teacher-code-input').value === TEACHER_SECRET_CODE) {
                 closeTeacherCodeModal();
                 try {
                     const provider = new GoogleAuthProvider();
-                    const result = await signInWithPopup(auth, provider);
-                    const user = result.user;
-                    await registerTeacherInFirestore(user);
+                    await signInWithPopup(auth, provider);
                 } catch (error) {
-                    console.error("구글 로그인 또는 교사 등록 오류:", error);
-                    console.log(`로그인에 실패했습니다: ${error.message}`);
+                    console.error("Google Sign-In Error:", error);
                 }
             } else {
                 document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
@@ -376,7 +351,6 @@
             const teacherInfo = document.getElementById('teacher-info');
             const teacherName = document.getElementById('teacher-name');
             const manageBtn = document.getElementById('manage-btn');
-            
             if (user && !user.isAnonymous) {
                 loginBtn.style.display = 'none';
                 teacherInfo.style.display = 'flex';
@@ -389,55 +363,35 @@
         }
 
         function handleTeacherLogout() {
-            signOut(auth).catch(error => console.error("로그아웃 오류:", error));
+            signOut(auth).catch(error => console.error("Logout Error:", error));
         }
 
         function openTeacherDashboard() {
-            if (!isTeacher) {
-                console.log("교사 계정으로 로그인해야 지문을 관리할 수 있습니다.");
-                return;
-            }
-            const modal = document.getElementById('teacher-dashboard-modal');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+            if (!isTeacher) return;
+            document.getElementById('teacher-dashboard-modal').classList.remove('hidden');
+            document.getElementById('teacher-dashboard-modal').classList.add('flex');
             renderManageList();
             resetForm();
         }
+
         function closeTeacherDashboard() { 
-            const modal = document.getElementById('teacher-dashboard-modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
+            document.getElementById('teacher-dashboard-modal').classList.add('hidden');
+            document.getElementById('teacher-dashboard-modal').classList.remove('flex');
         }
 
-        // --- 지문 관리 기능 (Firebase 연동) ---
         function renderManageList() {
             const listEl = document.getElementById('manage-doc-list');
             listEl.innerHTML = '';
             window.documents.forEach((doc) => {
                 const item = document.createElement('div');
                 item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
-                
-                const titleSpan = document.createElement('span');
-                titleSpan.className = 'truncate';
-                titleSpan.textContent = doc.title;
-                item.appendChild(titleSpan);
-
-                const btnContainer = document.createElement('div');
-                btnContainer.className = 'flex-shrink-0';
-                
-                const editBtn = document.createElement('button');
-                editBtn.className = 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2';
-                editBtn.textContent = '수정';
-                editBtn.onclick = () => editDocument(doc.id);
-                btnContainer.appendChild(editBtn);
-
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg';
-                deleteBtn.textContent = '삭제';
-                deleteBtn.onclick = () => deleteDocument(doc.id, doc.title);
-                btnContainer.appendChild(deleteBtn);
-
-                item.appendChild(btnContainer);
+                item.innerHTML = `<span class="truncate">${doc.title}</span>
+                    <div class="flex-shrink-0">
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button>
+                        <button class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button>
+                    </div>`;
+                item.querySelector('.bg-blue-600').onclick = () => editDocument(doc.id);
+                item.querySelector('.bg-red-600').onclick = () => deleteDocument(doc.id, doc.title);
                 listEl.appendChild(item);
             });
         }
@@ -446,31 +400,19 @@
             const title = document.getElementById('new-doc-title').value.trim();
             const passage = document.getElementById('new-doc-passage').value.trim();
             const docId = document.getElementById('edit-doc-id').value;
-            
-            if (!auth.currentUser || auth.currentUser.isAnonymous) {
-                console.log('문서를 저장하려면 교사로 로그인해야 합니다.');
-                return;
-            }
+            if (!auth.currentUser || auth.currentUser.isAnonymous || !title || !passage) return;
             const userId = auth.currentUser.uid;
             const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-
-            if (!title || !passage) {
-                console.log('제목과 내용을 모두 입력해주세요.');
-                return;
-            }
-
             const data = { title, passage, createdAt: serverTimestamp(), author: userId };
-
             try {
-                if (docId) { // 수정
+                if (docId) {
                     await updateDoc(doc(db, passagesColPath, docId), { title, passage });
-                } else { // 추가
+                } else {
                     await addDoc(collection(db, passagesColPath), data);
                 }
                 resetForm();
             } catch (error) {
-                console.error("문서 저장 오류:", error);
-                console.log("문서 저장 중 오류가 발생했습니다.");
+                console.error("Save Document Error:", error);
             }
         }
 
@@ -485,14 +427,14 @@
         }
 
         async function deleteDocument(docId, title) {
-            console.log(`'${title}' 지문을 정말 삭제하시겠습니까? (삭제 기능은 구현 필요)`);
+            // confirm()은 iframe 환경에서 작동하지 않을 수 있으므로, 임시로 console.log 처리
+            console.log(`'${title}' 지문 삭제 요청됨`);
             try {
                 const userId = auth.currentUser.uid;
                 const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
                 await deleteDoc(doc(db, passagesColPath, docId));
             } catch (error) {
-                console.error("문서 삭제 오류:", error);
-                console.log("문서 삭제 중 오류가 발생했습니다.");
+                console.error("Delete Document Error:", error);
             }
         }
 
@@ -503,21 +445,14 @@
             document.getElementById('edit-doc-id').value = '';
         }
         
-        // --- 스텝 네비게이션 ---
         function goToStep(step) {
             currentStep = step;
             const slider = document.getElementById('slider-container');
-            if (slider) {
-                slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
-            }
+            if (slider) slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
             document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
             clearHighlights();
         }
-
-        window.nextStep = () => { if (currentStep < 3) goToStep(currentStep + 1); }
-        window.prevStep = () => { if (currentStep > 1) goToStep(currentStep - 1); }
         
-        // --- 텍스트 하이라이팅 ---
         function clearHighlights() {
             const passageEl = document.getElementById('modal-passage');
             if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
@@ -529,37 +464,28 @@
             clearHighlights();
             const passageEl = document.getElementById('modal-passage');
             let passageText = passageEl.innerText;
-            const keywords = hints.flatMap(hint => {
-                const matches = hint.match(/“([^”]+)”|'([^']+)'/g);
-                return matches ? matches.map(m => m.replace(/“|”|'|'/g, '')) : [];
-            });
-            const uniqueKeywords = [...new Set(keywords)];
-            uniqueKeywords.forEach(keyword => {
+            const keywords = hints.flatMap(hint => (hint.match(/“([^”]+)”|'([^']+)'/g) || []).map(m => m.replace(/“|”|'|'/g, '')));
+            [...new Set(keywords)].forEach(keyword => {
                 const regex = new RegExp(keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g');
                 passageText = passageText.replace(regex, `<span class="highlight">${keyword}</span>`);
             });
             passageEl.innerHTML = passageText.replace(/\n/g, '<br>');
         }
 
-        // --- AI 피드백 ---
-        window.getFeedback = async function(button) {
+        async function getFeedback(button) {
             const stepElement = button.closest('.slider-item');
             const targetType = stepElement.dataset.type;
             const studentQuestion = stepElement.querySelector('textarea').value;
-            const passage = window.documents[currentDocIndex].passage;
             const feedbackContainer = stepElement.querySelector('.feedback-container');
-
             if (!studentQuestion.trim()) {
                 feedbackContainer.innerHTML = `<p class="text-red-400">질문을 입력해주세요.</p>`;
                 feedbackContainer.classList.remove('hidden');
                 return;
             }
-            
             feedbackContainer.classList.remove('hidden');
             feedbackContainer.innerHTML = `<div class="flex items-center justify-center space-x-2"><div class="w-4 h-4 rounded-full bg-green-400 animate-pulse"></div><p>AI 튜터가 피드백을 생성 중입니다...</p></div>`;
-
             try {
-                const response = await callAIApi(passage, targetType, studentQuestion);
+                const response = await callAIApi(window.documents[currentDocIndex].passage, targetType, studentQuestion);
                 displayFeedback(response, stepElement);
                 applyHighlights(response.hints || []);
             } catch (error) {
@@ -569,30 +495,11 @@
         }
 
         async function callAIApi(passage, targetType, studentQuestion) {
-            console.log("Calling mock AI API with:", { passage, targetType, studentQuestion });
             await new Promise(resolve => setTimeout(resolve, 1500));
             const mockData = {
-                factual: {
-                    predicted_type: "factual",
-                    similarity: { factual: 85, divergent: 20, creative: 5 },
-                    rationale: "질문이 지문의 '언제', '어디서', '누가'와 같은 명시적 정보에 초점을 맞추고 있습니다.",
-                    positive_feedback: "훌륭해요! 지문에 있는 핵심 정보를 정확하게 파악하는 사실적 질문을 잘 만들었어요.",
-                    exemplar_questions: ["등장인물의 이름은 무엇인가요?", "사건이 발생한 연도는 언제인가요?"]
-                },
-                divergent: {
-                    predicted_type: "divergent",
-                    similarity: { factual: 30, divergent: 75, creative: 40 },
-                    rationale: "질문이 '만약 ~라면?'과 같이 지문 내용을 바탕으로 다양한 가능성을 탐색하도록 유도합니다.",
-                    positive_feedback: "좋은 질문이에요! 지문 내용을 바탕으로 더 깊게 생각하고 상상해볼 수 있는 발산적 질문이네요.",
-                    exemplar_questions: ["주인공이 다른 선택을 했다면 어떤 결과가 나왔을까요?", "이 사건이 현재 우리에게 주는 교훈은 무엇일까요?"]
-                },
-                creative: {
-                    predicted_type: "creative",
-                    similarity: { factual: 10, divergent: 50, creative: 90 },
-                    rationale: "질문이 지문의 상황을 완전히 새로운 관점에서 보거나, 등장인물의 입장에서 새로운 이야기를 만들도록 유도합니다.",
-                    positive_feedback: "정말 창의적인 질문이에요! 지문을 뛰어넘어 자신만의 새로운 이야기를 만들 수 있는 훌륭한 질문입니다.",
-                    exemplar_questions: ["이 이야기의 뒷이야기를 상상해서 써보세요.", "등장인물의 입장에서 일기를 써본다면 어떨까요?"]
-                }
+                factual: { similarity: { factual: 85, divergent: 20, creative: 5 }, rationale: "질문이 지문의 명시적 정보에 초점을 맞추고 있습니다.", positive_feedback: "훌륭해요! 핵심 정보를 정확하게 파악하는 사실적 질문입니다.", exemplar_questions: ["등장인물의 이름은?", "사건 발생 연도는?"] },
+                divergent: { similarity: { factual: 30, divergent: 75, creative: 40 }, rationale: "질문이 다양한 가능성을 탐색하도록 유도합니다.", positive_feedback: "좋아요! 더 깊게 생각하게 하는 발산적 질문이네요.", exemplar_questions: ["주인공이 다른 선택을 했다면?", "이 사건의 교훈은?"] },
+                creative: { similarity: { factual: 10, divergent: 50, creative: 90 }, rationale: "질문이 새로운 이야기를 만들도록 유도합니다.", positive_feedback: "정말 창의적이에요! 새로운 이야기를 만들 수 있는 질문입니다.", exemplar_questions: ["이 이야기의 뒷이야기를 상상해보세요.", "등장인물의 입장에서 일기를 써본다면?"] }
             };
             if (studentQuestion.includes("왜")) return mockData.divergent;
             if (studentQuestion.includes("만약")) return mockData.creative;
@@ -601,100 +508,48 @@
 
         function displayFeedback(data, stepElement) {
             const feedbackContainer = stepElement.querySelector('.feedback-container');
-            const targetType = stepElement.dataset.type;
-            const targetSimilarity = data.similarity ? data.similarity[targetType] : 0;
+            const targetSimilarity = data.similarity[stepElement.dataset.type] || 0;
+            const gaugeColors = { factual: 'stroke-green-400', divergent: 'stroke-blue-400', creative: 'stroke-purple-400' };
+            let html = `<div><h5 class="font-bold mb-4">유사도 분석</h5><div class="flex justify-around text-center">
+                ${Object.entries(data.similarity).map(([type, value]) => `
+                    <div class="flex flex-col items-center">
+                        <div class="relative w-24 h-24">
+                            <svg class="w-full h-full" viewBox="0 0 36 36">
+                                <circle class="gauge-circle-bg" cx="18" cy="18" r="15.9155"></circle>
+                                <circle class="gauge-circle-value ${gaugeColors[type]}" cx="18" cy="18" r="15.9155" stroke-dasharray="100" stroke-dashoffset="100" data-value="${value}"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-xl font-bold"><span class="gauge-percent" data-value="${value}">0</span>%</div>
+                        </div>
+                        <span class="mt-2 font-semibold">${typeTranslations[type]}</span>
+                    </div>`).join('')}
+                </div><p class="text-sm text-gray-400 mt-4 text-center"><strong>분석:</strong> ${data.rationale}</p></div>`;
             
-            const gaugeColors = {
-                factual: 'stroke-green-400',
-                divergent: 'stroke-blue-400',
-                creative: 'stroke-purple-400'
-            };
-
-            let html = `<div class="space-y-4">`;
-            html += `
-                <div>
-                    <h5 class="font-bold mb-4">유사도 분석</h5>
-                    <div class="flex justify-around text-center">
-                        ${Object.entries(data.similarity || {}).map(([type, value]) => `
-                            <div class="flex flex-col items-center">
-                                <div class="relative w-24 h-24">
-                                    <svg class="w-full h-full" viewBox="0 0 36 36">
-                                        <circle class="gauge-circle-bg" cx="18" cy="18" r="15.9155"></circle>
-                                        <circle class="gauge-circle-value ${gaugeColors[type]}"
-                                            cx="18" cy="18" r="15.9155"
-                                            stroke-dasharray="100"
-                                            stroke-dashoffset="100"
-                                            data-value="${value}">
-                                        </circle>
-                                    </svg>
-                                    <div class="absolute inset-0 flex items-center justify-center text-xl font-bold">
-                                        <span class="gauge-percent" data-value="${value}">0</span>%
-                                    </div>
-                                </div>
-                                <span class="mt-2 font-semibold">${typeTranslations[type] || type}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <p class="text-sm text-gray-400 mt-4 text-center"><strong>분석:</strong> ${data.rationale}</p>
-                </div>
-            `;
-
             if (targetSimilarity >= 70) {
-                html += `
-                    <div>
-                        <h5 class="font-bold text-green-400">피드백</h5>
-                        <p class="bg-gray-800 p-3 rounded-lg">${data.positive_feedback}</p>
-                    </div>
-                    <div>
-                        <h5 class="font-bold">질문 예시</h5>
-                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
-                            ${(data.exemplar_questions || []).map(q => `<li>${q}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-                const nextBtn = stepElement.querySelector('.next-btn');
-                if(nextBtn) {
-                    nextBtn.classList.remove('hidden');
-                }
+                html += `<div><h5 class="font-bold text-green-400">피드백</h5><p class="bg-gray-800 p-3 rounded-lg">${data.positive_feedback}</p></div>
+                         <div><h5 class="font-bold">질문 예시</h5><ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">${(data.exemplar_questions || []).map(q => `<li>${q}</li>`).join('')}</ul></div>`;
+                stepElement.querySelector('.next-btn')?.classList.remove('hidden');
             } else {
-                html += `
-                    <div>
-                        <h5 class="font-bold text-yellow-400">힌트</h5>
-                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
-                            ${(data.hints || []).map(tip => `<li>${tip}</li>`).join('')}
-                        </ul>
-                    </div>
-                    <div>
-                        <h5 class="font-bold text-yellow-400">개선점</h5>
-                        <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
-                            ${(data.improvement_tips || []).map(tip => `<li>${tip}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
+                html += `<div><h5 class="font-bold text-yellow-400">힌트</h5><ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">${(data.hints || ["질문의 유형을 다시 생각해보세요."]).map(tip => `<li>${tip}</li>`).join('')}</ul></div>
+                         <div><h5 class="font-bold text-yellow-400">개선점</h5><ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">${(data.improvement_tips || ["지문의 핵심 키워드를 활용해보세요."]).map(tip => `<li>${tip}</li>`).join('')}</ul></div>`;
             }
-
-            html += `</div>`;
-            feedbackContainer.innerHTML = html;
-
-            feedbackContainer.querySelectorAll('.gauge-circle-value').forEach(circle => {
-                const value = circle.dataset.value;
-                setTimeout(() => { circle.style.strokeDashoffset = 100 - value; }, 100);
-            });
-
-            feedbackContainer.querySelectorAll('.gauge-percent').forEach(span => {
-                const targetValue = parseInt(span.dataset.value, 10);
-                let currentValue = 0;
+            feedbackContainer.innerHTML = `<div class="space-y-4">${html}</div>`;
+            feedbackContainer.querySelectorAll('.gauge-circle-value').forEach(c => setTimeout(() => c.style.strokeDashoffset = 100 - c.dataset.value, 100));
+            feedbackContainer.querySelectorAll('.gauge-percent').forEach(s => {
+                let current = 0;
+                const target = +s.dataset.value;
                 const interval = setInterval(() => {
-                    if (currentValue >= targetValue) {
-                        clearInterval(interval);
-                        span.textContent = targetValue;
-                        return;
-                    }
-                    currentValue++;
-                    span.textContent = currentValue;
+                    if (current >= target) { clearInterval(interval); s.textContent = target; return; }
+                    current++; s.textContent = current;
                 }, 10);
             });
         }
+        
+        // --- 전역에서 접근 가능한 함수들 ---
+        window.app = {
+            nextStep: () => goToStep(currentStep + 1),
+            completeAndCloseModal,
+            getFeedback
+        };
 
         // --- 초기화 ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -707,29 +562,25 @@
             document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
             document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
             
-            signInAnonymously(auth).catch((error) => console.error("익명 로그인 오류:", error));
-
             onAuthStateChanged(auth, async (user) => {
-                let isTeacherStatus = false;
-                if (user && !user.isAnonymous) {
-                    isTeacherStatus = await checkIfTeacher(user.uid);
-                }
-                updateLoginUI(user, isTeacherStatus);
-                
-                if (isTeacherStatus) {
-                    const passagesColPath = `artifacts/${appId}/users/${user.uid}/passages`;
-                    const q = query(collection(db, passagesColPath));
-                    onSnapshot(q, (snapshot) => {
-                        documents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        window.documents = documents;
-                        renderDocumentCards();
-                        if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
-                            renderManageList();
-                        }
-                    });
-                } else {
-                    documents = [];
-                    window.documents = documents;
+                if (user && !user.isAnonymous) { // 로그인한 사용자 (교사)
+                    await registerTeacherInFirestore(user); // 교사로 등록
+                    const isTeacherStatus = await checkIfTeacher(user.uid);
+                    updateLoginUI(user, isTeacherStatus);
+                    if (isTeacherStatus) {
+                        const passagesColPath = `artifacts/${appId}/users/${user.uid}/passages`;
+                        onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
+                            documents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            renderDocumentCards();
+                            if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
+                                renderManageList();
+                            }
+                        });
+                    }
+                } else { // 비로그인 또는 익명 사용자
+                    signInAnonymously(auth).catch((error) => console.error("Anonymous sign-in error:", error));
+                    updateLoginUI(null, false);
+                    documents = []; // 학생은 교사가 추가한 공개 지문을 봐야 하므로, 현재 로직에서는 빈 배열로 초기화
                     renderDocumentCards();
                 }
             });
