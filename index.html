@@ -316,12 +316,22 @@
         };
 
         const verifyTeacherCodeAndLogin = async () => {
+            const errorEl = document.getElementById('teacher-code-error');
             if (document.getElementById('teacher-code-input').value === TEACHER_SECRET_CODE) {
-                // 인증 코드가 맞으면 바로 리디렉션 시작
-                const provider = new GoogleAuthProvider();
-                await signInWithRedirect(auth, provider);
+                try {
+                    const provider = new GoogleAuthProvider();
+                    errorEl.innerText = 'Google 로그인 페이지로 이동합니다...';
+                    await signInWithRedirect(auth, provider);
+                } catch (error) {
+                    console.error("Redirect Sign-In Error:", error);
+                    if (error.code === 'auth/unauthorized-domain') {
+                        errorEl.innerText = '승인되지 않은 도메인입니다. Firebase 설정을 확인하세요.';
+                    } else {
+                        errorEl.innerText = '로그인 중 오류가 발생했습니다.';
+                    }
+                }
             } else {
-                document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
+                errorEl.innerText = '인증 코드가 일치하지 않습니다.';
             }
         };
 
