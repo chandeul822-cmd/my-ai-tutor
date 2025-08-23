@@ -712,12 +712,11 @@
         };
 
         // --- 초기화 ---
-        document.addEventListener('DOMContentLoaded', () => {
-             // 이벤트 리스너는 DOM이 로드된 후에 설정
+        window.onload = () => {
             document.getElementById('teacher-login-btn').addEventListener('click', () => openTeacherCodeModal());
             document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
             document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
-        });
+        };
     </script>
 
 </body>
