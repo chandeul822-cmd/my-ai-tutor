@@ -249,12 +249,60 @@
         }
 
         // --- 학습용 모달 제어 ---
+        // --- 슬라이더 생성 함수 (추가된 부분) ---
+        function createSlider() {
+            const sliderWrapper = document.getElementById('slider-wrapper');
+            sliderWrapper.innerHTML = ''; // 기존 내용 초기화
+
+            const sliderContainer = document.createElement('div');
+            sliderContainer.id = 'slider-container';
+            sliderContainer.className = 'slider-container h-full';
+
+            const steps = [
+                { type: 'factual', title: '사실적 질문', description: '지문에 나온 정보를 바탕으로 내용을 확인하는 질문을 만들어보세요. (예: 누가, 언제, 어디서, 무엇을, 어떻게 했나요?)' },
+                { type: 'divergent', title: '발산적 질문', description: '지문 내용을 바탕으로 원인과 결과를 추론하거나, 다른 상황을 상상해보는 질문을 만들어보세요. (예: 왜 그랬을까요? 만약 ~했다면 어떻게 됐을까요?)' },
+                { type: 'creative', title: '창의적 질문', description: '지문 내용을 넘어 새로운 아이디어를 더하거나, 자신의 생각을 표현하는 질문을 만들어보세요. (예: 이 다음 이야기는 어떻게 될까요? 나라면 어떻게 했을까요?)' }
+            ];
+
+            steps.forEach((step, index) => {
+                const item = document.createElement('div');
+                item.className = 'slider-item flex flex-col h-full p-1';
+                item.dataset.type = step.type;
+                
+                let nextButtonHtml = '';
+                if (index < steps.length - 1) {
+                    nextButtonHtml = `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="nextStep()">다음 단계로</button>`;
+                } else {
+                    nextButtonHtml = `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="completeAndCloseModal()">학습 완료</button>`;
+                }
+
+                item.innerHTML = `
+                    <div class="flex-grow flex flex-col">
+                        <h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4>
+                        <p class="text-sm text-gray-400 mb-4">${step.description}</p>
+                        <textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea>
+                        <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="getFeedback(this)">AI 피드백 받기</button>
+                        <div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div>
+                    </div>
+                    <div class="flex-shrink-0">
+                        ${nextButtonHtml}
+                    </div>
+                `;
+                sliderContainer.appendChild(item);
+            });
+
+            sliderWrapper.appendChild(sliderContainer);
+        }
+
         const openModal = (docIndex) => {
             const modal = document.getElementById('modal');
             currentDocIndex = docIndex;
             const doc = window.documents[docIndex];
             document.getElementById('modal-title').innerText = doc.title;
             document.getElementById('modal-passage').innerText = doc.passage;
+            
+            createSlider(); // 모달이 열릴 때 슬라이더 생성
+
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             document.body.style.overflow = 'hidden';
@@ -267,10 +315,6 @@
             modal.classList.remove('flex');
             document.body.style.overflow = 'auto';
             currentStep = 1;
-            document.querySelectorAll('.feedback-container').forEach(c => { c.innerHTML = ''; c.classList.add('hidden'); });
-            document.querySelectorAll('textarea').forEach(t => { t.value = ''; });
-            document.querySelectorAll('.next-btn').forEach(b => { b.classList.add('hidden'); b.classList.add('text-gray-400'); b.classList.remove('text-white', 'bg-green-600', 'hover:bg-green-700'); });
-            clearHighlights();
         }
         
         const completeAndCloseModal = () => {
@@ -308,7 +352,6 @@
                     await registerTeacherInFirestore(user);
                 } catch (error) {
                     console.error("구글 로그인 또는 교사 등록 오류:", error);
-                    // alert() 대신 커스텀 모달 사용을 권장합니다.
                     console.log(`로그인에 실패했습니다: ${error.message}`);
                 }
             } else {
@@ -351,7 +394,6 @@
 
         function openTeacherDashboard() {
             if (!isTeacher) {
-                // alert() 대신 커스텀 모달 사용을 권장합니다.
                 console.log("교사 계정으로 로그인해야 지문을 관리할 수 있습니다.");
                 return;
             }
@@ -443,19 +485,15 @@
         }
 
         async function deleteDocument(docId, title) {
-            // confirm() 대신 커스텀 모달 UI 사용을 권장합니다.
-            // 여기서는 일단 console.log로 대체합니다.
             console.log(`'${title}' 지문을 정말 삭제하시겠습니까? (삭제 기능은 구현 필요)`);
-            // if (confirm(`'${title}' 지문을 정말 삭제하시겠습니까?`)) {
-                try {
-                    const userId = auth.currentUser.uid;
-                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                    await deleteDoc(doc(db, passagesColPath, docId));
-                } catch (error) {
-                    console.error("문서 삭제 오류:", error);
-                    console.log("문서 삭제 중 오류가 발생했습니다.");
-                }
-            // }
+            try {
+                const userId = auth.currentUser.uid;
+                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                await deleteDoc(doc(db, passagesColPath, docId));
+            } catch (error) {
+                console.error("문서 삭제 오류:", error);
+                console.log("문서 삭제 중 오류가 발생했습니다.");
+            }
         }
 
         function resetForm() {
@@ -476,8 +514,8 @@
             clearHighlights();
         }
 
-        function nextStep() { if (currentStep < 3) goToStep(currentStep + 1); }
-        function prevStep() { if (currentStep > 1) goToStep(currentStep - 1); }
+        window.nextStep = () => { if (currentStep < 3) goToStep(currentStep + 1); }
+        window.prevStep = () => { if (currentStep > 1) goToStep(currentStep - 1); }
         
         // --- 텍스트 하이라이팅 ---
         function clearHighlights() {
@@ -504,7 +542,7 @@
         }
 
         // --- AI 피드백 ---
-        async function getFeedback(button) {
+        window.getFeedback = async function(button) {
             const stepElement = button.closest('.slider-item');
             const targetType = stepElement.dataset.type;
             const studentQuestion = stepElement.querySelector('textarea').value;
@@ -531,14 +569,8 @@
         }
 
         async function callAIApi(passage, targetType, studentQuestion) {
-            // This is a placeholder for a real API call.
-            // Replace this with your actual Gemini API call logic.
             console.log("Calling mock AI API with:", { passage, targetType, studentQuestion });
-            
-            // Simulating API latency
             await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // Mock response structure
             const mockData = {
                 factual: {
                     predicted_type: "factual",
@@ -562,13 +594,8 @@
                     exemplar_questions: ["이 이야기의 뒷이야기를 상상해서 써보세요.", "등장인물의 입장에서 일기를 써본다면 어떨까요?"]
                 }
             };
-            
-            // Return mock data based on target type, or a mix if the question is ambiguous
-            if (studentQuestion.includes("왜")) {
-                 return mockData.divergent;
-            } else if (studentQuestion.includes("만약")) {
-                 return mockData.creative;
-            }
+            if (studentQuestion.includes("왜")) return mockData.divergent;
+            if (studentQuestion.includes("만약")) return mockData.creative;
             return mockData[targetType];
         }
 
@@ -618,8 +645,6 @@
                         <h5 class="font-bold text-green-400">피드백</h5>
                         <p class="bg-gray-800 p-3 rounded-lg">${data.positive_feedback}</p>
                     </div>
-                `;
-                html += `
                     <div>
                         <h5 class="font-bold">질문 예시</h5>
                         <ul class="list-disc list-inside bg-gray-800 p-3 rounded-lg space-y-1">
@@ -629,8 +654,7 @@
                 `;
                 const nextBtn = stepElement.querySelector('.next-btn');
                 if(nextBtn) {
-                    nextBtn.classList.remove('hidden', 'bg-gray-700', 'text-gray-400');
-                    nextBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                    nextBtn.classList.remove('hidden');
                 }
             } else {
                 html += `
@@ -652,15 +676,9 @@
             html += `</div>`;
             feedbackContainer.innerHTML = html;
 
-            // Animate gauges
             feedbackContainer.querySelectorAll('.gauge-circle-value').forEach(circle => {
                 const value = circle.dataset.value;
-                const circumference = 100;
-                const offset = circumference - value;
-                
-                setTimeout(() => {
-                    circle.style.strokeDashoffset = offset;
-                }, 100);
+                setTimeout(() => { circle.style.strokeDashoffset = 100 - value; }, 100);
             });
 
             feedbackContainer.querySelectorAll('.gauge-percent').forEach(span => {
@@ -680,28 +698,17 @@
 
         // --- 초기화 ---
         document.addEventListener('DOMContentLoaded', () => {
-            // 이벤트 리스너는 DOM이 로드된 후에 설정
             document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
             document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
             document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
-            
-            // 교사 인증 모달 버튼
             document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
             document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
-
-            // 학습용 모달 닫기 버튼
             document.getElementById('close-modal-btn').addEventListener('click', closeModal);
-
-            // 지문 관리 대시보드 버튼
             document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
             document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
             
-            // 익명 사용자 로그인
-            signInAnonymously(auth).catch((error) => {
-                console.error("익명 로그인 오류:", error);
-            });
+            signInAnonymously(auth).catch((error) => console.error("익명 로그인 오류:", error));
 
-            // 인증 상태 변경 감지
             onAuthStateChanged(auth, async (user) => {
                 let isTeacherStatus = false;
                 if (user && !user.isAnonymous) {
@@ -709,7 +716,6 @@
                 }
                 updateLoginUI(user, isTeacherStatus);
                 
-                // 교사일 경우에만 지문 데이터 구독
                 if (isTeacherStatus) {
                     const passagesColPath = `artifacts/${appId}/users/${user.uid}/passages`;
                     const q = query(collection(db, passagesColPath));
@@ -717,13 +723,12 @@
                         documents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         window.documents = documents;
                         renderDocumentCards();
-                        renderManageList();
+                        if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
+                            renderManageList();
+                        }
                     });
                 } else {
-                    // 학생 또는 비로그인 사용자는 공개된 지문을 보도록 설정 (예시)
-                    // 현재는 교사가 본인 지문만 관리하므로, 학생 뷰에서는 지문이 안보일 수 있습니다.
-                    // 공개 지문 로직을 추가해야 합니다.
-                    documents = []; // 임시로 비워둠
+                    documents = [];
                     window.documents = documents;
                     renderDocumentCards();
                 }
