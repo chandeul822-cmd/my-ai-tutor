@@ -177,8 +177,9 @@
         // --- Firebase 초기화 (오류 처리 강화) ---
         let app, db, auth;
         try {
-            const firebaseConfig = typeof __firebase_config !== 'undefined' 
-                ? JSON.parse(__firebase_config) 
+            // Netlify 환경 변수 이름에서 '__'를 제거하고 'FIREBASE_CONFIG'를 사용합니다.
+            const firebaseConfig = typeof FIREBASE_CONFIG !== 'undefined' 
+                ? JSON.parse(FIREBASE_CONFIG) 
                 : { apiKey: "FALLBACK_API_KEY", projectId: "FALLBACK_PROJECT_ID" };
             
             app = initializeApp(firebaseConfig);
