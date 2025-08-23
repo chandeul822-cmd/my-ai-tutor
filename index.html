@@ -288,22 +288,23 @@
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                         </svg>` : '';
 
-                    const card = `
-                        <div class="bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect" onclick="window.app.openModal(${index})">
-                            <div class="flex justify-between items-start mb-4">
-                                <div class="flex items-center">
-                                    <h2 class="text-2xl font-bold">${doc.title}</h2>
-                                    ${checkIcon}
-                                </div>
-                                <div class="icon-container text-4xl text-green-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                </div>
+                    const card = document.createElement('div');
+                    card.className = 'bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect';
+                    card.onclick = () => openModal(index);
+                    card.innerHTML = `
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex items-center">
+                                <h2 class="text-2xl font-bold">${doc.title}</h2>
+                                ${checkIcon}
                             </div>
-                            <div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm">
-                                <p>${preview}</p>
+                            <div class="icon-container text-4xl text-green-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                             </div>
+                        </div>
+                        <div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm">
+                            <p>${preview}</p>
                         </div>`;
-                    listEl.innerHTML += card;
+                    listEl.appendChild(card);
                 });
             }
         }
@@ -435,8 +436,8 @@
                 item.innerHTML = `
                     <span class="truncate">${doc.title}</span>
                     <div class="flex-shrink-0">
-                        <button onclick="window.app.editDocument('${doc.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button>
-                        <button onclick="window.app.deleteDocument('${doc.id}', '${doc.title}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button>
+                        <button onclick="editDocument('${doc.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button>
+                        <button onclick="deleteDocument('${doc.id}', '${doc.title}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button>
                     </div>`;
                 listEl.appendChild(item);
             });
