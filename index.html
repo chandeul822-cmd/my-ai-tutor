@@ -320,16 +320,16 @@
             if (document.getElementById('teacher-code-input').value === TEACHER_SECRET_CODE) {
                 const provider = new GoogleAuthProvider();
                 errorEl.innerText = 'Google 로그인 페이지로 이동합니다...';
-                // signInWithRedirect는 페이지를 이동시키므로, 이후 코드는 실행되지 않음
-                // 오류는 getRedirectResult에서 처리
-                await signInWithRedirect(auth, provider).catch(error => {
+                try {
+                    await signInWithRedirect(auth, provider);
+                } catch (error) {
                     console.error("signInWithRedirect Error:", error);
                     if (error.code === 'auth/unauthorized-domain') {
-                        errorEl.innerText = '승인되지 않은 도메인입니다. Firebase 설정을 확인하세요.';
+                        errorEl.innerText = `도메인 불일치 오류. 현재 도메인(${window.location.hostname})을 Firebase에 등록하세요.`;
                     } else {
-                        errorEl.innerText = '로그인 중 오류가 발생했습니다.';
+                        errorEl.innerText = `로그인 오류: ${error.message}`;
                     }
-                });
+                }
             } else {
                 errorEl.innerText = '인증 코드가 일치하지 않습니다.';
             }
