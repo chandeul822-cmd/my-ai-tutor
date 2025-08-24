@@ -835,7 +835,7 @@
                     }
                 },
                 completeAndCloseModal,
-                getFeedback: (button) => {
+                getFeedback: async (button) => {
                     const container = button.parentElement.querySelector('.feedback-container');
                     const textarea = button.parentElement.querySelector('textarea');
                     const question = textarea.value.trim();
@@ -845,11 +845,230 @@
                         return;
                     }
                     
-                    container.innerHTML = '<p class="text-green-400">피드백 기능이 작동중입니다.</p>';
+                    // 현재 단계 확인
+                    const currentSlider = document.querySelector('.slider-item:nth-child(' + currentStep + ')');
+                    const questionType = currentSlider.dataset.type;
+                    const questionTypeKorean = {
+                        'factual': '사실적',
+                        'divergent': '발산적', 
+                        'creative': '창의적'
+                    }[questionType];
+                    
+                    // 로딩 상태 표시
+                    container.innerHTML = `
+                        <div class="flex items-center justify-center py-8">
+                            <div class="loading-spinner mr-3"></div>
+                            <span class="text-blue-400">AI가 질문을 분석하고 있습니다...</span>
+                        </div>
+                    `;
                     container.classList.remove('hidden');
-                    button.nextElementSibling.nextElementSibling.classList.remove('hidden');
+                    button.disabled = true;
+                    
+                    try {
+                        const passage = window.documents[currentDocIndex].passage;
+                        const feedback = await getAIFeedback(question, questionType, passage, questionTypeKorean);
+                        
+                        // 피드백 UI 렌더링
+                        renderFeedbackUI(container, feedback, button);
+                        
+                    } catch (error) {
+                        console.error('AI 피드백 오류:', error);
+                        container.innerHTML = `
+                            <div class="text-red-400 p-4 rounded bg-red-900/20">
+                                <div class="font-bold mb-2">❌ 피드백 생성 실패</div>
+                                <div class="text-sm">잠시 후 다시 시도해주세요.</div>
+                                <button onclick="this.parentElement.parentElement.classList.add('hidden')" 
+                                        class="mt-3 bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">
+                                    닫기
+                                </button>
+                            </div>
+                        `;
+                        button.disabled = false;
+                    }
                 }
             };
+
+            async function getAIFeedback(question, questionType, passage, questionTypeKorean) {
+                try {
+                    const response = await fetch('/.netlify/functions/get-feedback', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            passage: passage,
+                            targetType: questionType,
+                            studentQuestion: question
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API 요청 실패: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    console.log('OpenAI API 응답:', result);
+                    
+                    // OpenAI 응답에서 실제 콘텐츠 추출
+                    const feedbackContent = JSON.parse(result.choices[0].message.content);
+                    
+                    // 기존 형식으로 변환
+                    return {
+                        scores: {
+                            factual: feedbackContent.similarity.factual,
+                            divergent: feedbackContent.similarity.divergent,
+                            creative: feedbackContent.similarity.creative
+                        },
+                        feedback: feedbackContent.similarity[questionType] >= 70 ? 
+                            feedbackContent.positive_feedback : 
+                            feedbackContent.improvement_tips.join(' '),
+                        example: feedbackContent.similarity[questionType] >= 70 ? 
+                            feedbackContent.exemplar_questions[0] : null,
+                        rationale: feedbackContent.rationale,
+                        hints: feedbackContent.hints
+                    };
+                    
+                } catch (error) {
+                    console.error('OpenAI API 호출 오류:', error);
+                    throw error;
+                }
+            }
+
+            function renderFeedbackUI(container, feedback, button) {
+                const currentSlider = document.querySelector('.slider-item:nth-child(' + currentStep + ')');
+                const questionType = currentSlider.dataset.type;
+                const currentScore = feedback.scores[questionType];
+                const isPassing = currentScore >= 70;
+                
+                // 게이지 차트 생성
+                const gaugeHTML = createGaugeChart(feedback.scores);
+                
+                // 피드백 UI 구성
+                let feedbackHTML = `
+                    <div class="space-y-4">
+                        <!-- 점수 게이지 -->
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-bold mb-4 text-center">질문 분석 결과</h4>
+                            ${gaugeHTML}
+                        </div>
+                        
+                        <!-- 분석 근거 -->
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-bold mb-2 text-blue-400">📊 분석 근거</h4>
+                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.rationale}</p>
+                        </div>
+                        
+                        <!-- 피드백 내용 -->
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-bold mb-2 ${isPassing ? 'text-green-400' : 'text-orange-400'}">
+                                ${isPassing ? '✅ 좋은 질문입니다!' : '⚠️ 개선이 필요합니다'}
+                            </h4>
+                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.feedback}</p>
+                        </div>
+                `;
+                
+                // 힌트 표시
+                if (feedback.hints && feedback.hints.length > 0) {
+                    feedbackHTML += `
+                        <div class="bg-purple-900/30 p-4 rounded-lg border border-purple-600/30">
+                            <h4 class="text-purple-400 font-bold mb-2">💡 생각해볼 힌트</h4>
+                            <ul class="text-gray-300 text-sm space-y-1">
+                                ${feedback.hints.map(hint => `<li>• ${hint}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                // 질문 예시 (70% 이상일 때만)
+                if (isPassing && feedback.example) {
+                    feedbackHTML += `
+                        <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-600/30">
+                            <h4 class="text-blue-400 font-bold mb-2">🎯 비슷한 질문 예시</h4>
+                            <p class="text-gray-300 text-sm italic">"${feedback.example}"</p>
+                        </div>
+                    `;
+                }
+                
+                feedbackHTML += `</div>`;
+                
+                container.innerHTML = feedbackHTML;
+                
+                // 게이지 애니메이션 시작
+                setTimeout(() => {
+                    animateGauges(feedback.scores);
+                }, 100);
+                
+                // 70% 이상이면 다음 버튼 활성화
+                if (isPassing) {
+                    const nextButton = button.nextElementSibling.nextElementSibling;
+                    if (nextButton) {
+                        nextButton.classList.remove('hidden');
+                        nextButton.classList.remove('text-gray-400');
+                        nextButton.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                    }
+                }
+                
+                button.disabled = false;
+            }
+
+            function createGaugeChart(scores) {
+                return `
+                    <div class="grid grid-cols-3 gap-4 text-center">
+                        ${Object.entries(scores).map(([type, score]) => {
+                            const typeNames = {
+                                'factual': '사실성',
+                                'divergent': '발산성',
+                                'creative': '창의성'
+                            };
+                            const color = score >= 70 ? '#10B981' : score >= 50 ? '#F59E0B' : '#EF4444';
+                            return `
+                                <div class="flex flex-col items-center">
+                                    <div class="relative w-20 h-20 mb-2">
+                                        <svg class="w-20 h-20 transform -rotate-90">
+                                            <circle cx="40" cy="40" r="36" stroke="#374151" stroke-width="4" fill="none"/>
+                                            <circle cx="40" cy="40" r="36" stroke="${color}" stroke-width="4" fill="none"
+                                                    stroke-linecap="round" stroke-dasharray="226" stroke-dashoffset="226"
+                                                    class="gauge-${type}" style="transition: stroke-dashoffset 2s ease-in-out"/>
+                                        </svg>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span class="text-sm font-bold score-${type}">0%</span>
+                                        </div>
+                                    </div>
+                                    <span class="text-xs text-gray-400">${typeNames[type]}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
+            function animateGauges(scores) {
+                Object.entries(scores).forEach(([type, score]) => {
+                    const circle = document.querySelector(`.gauge-${type}`);
+                    const scoreElement = document.querySelector(`.score-${type}`);
+                    
+                    if (circle && scoreElement) {
+                        // 원주 계산 (2πr = 2π×36 = 226)
+                        const circumference = 226;
+                        const offset = circumference - (score / 100) * circumference;
+                        
+                        // 애니메이션
+                        circle.style.strokeDashoffset = offset;
+                        
+                        // 숫자 카운트 애니메이션
+                        let currentScore = 0;
+                        const increment = score / 50; // 2초 동안 50번 업데이트
+                        const timer = setInterval(() => {
+                            currentScore += increment;
+                            if (currentScore >= score) {
+                                currentScore = score;
+                                clearInterval(timer);
+                            }
+                            scoreElement.textContent = Math.round(currentScore) + '%';
+                        }, 40);
+                    }
+                });
+            }
 
             handleAuthentication();
         }
