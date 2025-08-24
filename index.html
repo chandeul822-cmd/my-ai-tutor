@@ -270,7 +270,7 @@
                 ];
                 steps.forEach((step, index) => {
                     const item = document.createElement('div');
-                    item.className = 'slider-item flex flex-col h-full p-1';
+                    item.className = 'slider-item flex flex-col h-full p-4';
                     item.dataset.type = step.type;
                     let nextButtonHtml = (index < steps.length - 1)
                         ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
@@ -999,7 +999,7 @@
                 
                 // 게이지 애니메이션 시작
                 setTimeout(() => {
-                    animateGauges(feedback.scores);
+                    animateGauges(feedback.scores, container);
                 }, 100);
                 
                 // 70% 이상이면 다음 버튼 활성화
@@ -1049,10 +1049,13 @@
                 `;
             }
 
-            function animateGauges(scores) {
+            function animateGauges(scores, container) {
+                const currentSliderItem = container.closest('.slider-item');
+                if (!currentSliderItem) return;
+
                 Object.entries(scores).forEach(([type, score]) => {
-                    const circle = document.querySelector(`.gauge-${type}`);
-                    const scoreElement = document.querySelector(`.score-${type}`);
+                    const circle = currentSliderItem.querySelector(`.gauge-${type}`);
+                    const scoreElement = currentSliderItem.querySelector(`.score-${type}`);
                     
                     if (circle && scoreElement) {
                         // 원주 계산 (2πr = 2π×36 = 226)
