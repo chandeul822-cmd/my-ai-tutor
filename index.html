@@ -555,12 +555,7 @@
                     }
                     
                     resetForm();
-                    
-                    // 저장 후 목록을 강제로 다시 렌더링
-                    setTimeout(() => {
-                        renderManageList();
-                        console.log('저장 후 목록 갱신 완료');
-                    }, 1000);
+                    console.log('지문 저장 완료, Firebase 리스너가 자동으로 목록을 업데이트할 예정');
                     
                 } catch (error) {
                     console.error("지문 저장 오류:", error);
@@ -585,7 +580,7 @@
                     const userId = auth.currentUser.uid;
                     const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
                     await deleteDoc(doc(db, passagesColPath, docId));
-                    console.log("지문 삭제 완료:", title);
+                    console.log("지문 삭제 완료:", title, "Firebase 리스너가 자동으로 목록을 업데이트할 예정");
                 } catch (error) {
                     console.error("지문 삭제 오류:", error);
                     alert('지문 삭제에 실패했습니다.');
@@ -619,15 +614,24 @@
                 const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
                 
                 return new Promise((resolve) => {
+                    // 실시간 리스너 설정
                     onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
                         documents = snapshot.docs.map(doc => ({ 
                             id: doc.id, 
                             ...doc.data() 
                         }));
+                        
+                        // 글로벌 documents 배열 업데이트
+                        window.documents = documents;
+                        
                         console.log(`교사 지문 ${documents.length}개 로드됨`);
+                        
+                        // 메인 페이지 카드 렌더링
                         renderDocumentCards();
                         
+                        // 대시보드가 열려있다면 관리 목록도 업데이트
                         if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
+                            console.log('대시보드가 열려있어서 관리 목록도 업데이트');
                             renderManageList();
                         }
                         resolve();
