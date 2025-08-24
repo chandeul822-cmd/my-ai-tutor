@@ -182,7 +182,7 @@
 
     <!-- Firebase SDK 및 앱 로직 -->
     <script type="module">
-        // FIX: Firebase SDK 버전을 최신으로 유지하고 필요한 모듈만 가져옵니다.
+        // Firebase SDK 버전을 최신으로 유지하고 필요한 모듈만 가져옵니다.
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -192,31 +192,14 @@
         // Firebase 인스턴스를 전역으로 선언합니다.
         let app, db, auth;
 
-        // Netlify 함수를 사용하여 Firebase 설정을 안전하게 가져옵니다.
+        // FIX: Firebase 설정을 가져오는 로직을 환경에 맞게 수정합니다.
         async function initializeFirebase() {
             try {
-                // Netlify 함수가 없는 로컬 환경을 위한 폴백(Fallback)을 추가합니다.
-                // 실제 프로덕션에서는 Netlify 함수를 통해 환경 변수를 사용해야 합니다.
-                let firebaseConfig;
-                if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-                    console.warn("로컬 환경입니다. Firebase 설정은 하드코딩된 값을 사용합니다. 프로덕션에서는 Netlify 함수를 사용해야 합니다.");
-                    // 여기에 로컬 테스트용 Firebase 설정을 직접 넣으세요.
-                    firebaseConfig = {
-                        apiKey: "YOUR_API_KEY",
-                        authDomain: "YOUR_AUTH_DOMAIN",
-                        projectId: "YOUR_PROJECT_ID",
-                        storageBucket: "YOUR_STORAGE_BUCKET",
-                        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-                        appId: "YOUR_APP_ID"
-                    };
-                } else {
-                    const response = await fetch('/.netlify/functions/get-firebase-config');
-                     if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`Firebase 설정 가져오기 실패: ${response.status} ${errorText}`);
-                    }
-                    firebaseConfig = await response.json();
+                // 이 실행 환경에서는 __firebase_config 전역 변수를 통해 설정이 제공됩니다.
+                if (typeof __firebase_config === 'undefined') {
+                    throw new Error("Firebase 설정 변수(__firebase_config)를 찾을 수 없습니다. 앱이 올바른 환경에서 실행되고 있는지 확인하세요.");
                 }
+                const firebaseConfig = JSON.parse(__firebase_config);
 
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -371,7 +354,7 @@
                 try {
                     closeTeacherCodeModal();
                     showAuthLoading();
-                    // FIX: 로그인 시도 플래그를 세션 스토리지에 저장하여 페이지 리디렉션 후에도 유지되도록 함
+                    // 로그인 시도 플래그를 세션 스토리지에 저장하여 페이지 리디렉션 후에도 유지되도록 함
                     sessionStorage.setItem('teacherLoginAttempt', 'true');
                     
                     const provider = new GoogleAuthProvider();
@@ -464,12 +447,11 @@
                 const docId = document.getElementById('edit-doc-id').value;
 
                 if (!title || !passage || !auth.currentUser || auth.currentUser.isAnonymous) {
-                    // FIX: alert 대신 커스텀 UI 사용 권장 (여기서는 alert 유지)
                     alert('제목과 내용을 모두 입력해주세요.');
                     return;
                 }
                 
-                // FIX: 모든 지문을 공용 컬렉션에 저장하여 학생들도 볼 수 있도록 경로 수정
+                // 모든 지문을 공용 컬렉션에 저장하여 학생들도 볼 수 있도록 경로 수정
                 const passagesColPath = `artifacts/${appId}/public/data/passages`;
                 const user = auth.currentUser;
                 const data = {
@@ -505,7 +487,6 @@
 
             // 지문 삭제
             async function deleteDocument(docId, title) {
-                // FIX: confirm 대신 커스텀 UI 사용 권장
                 if (!window.confirm(`"${title}" 지문을 정말 삭제하시겠습니까?`)) return;
                 
                 try {
@@ -533,7 +514,7 @@
                 document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
             }
 
-            // FIX: 인증 로직을 중앙에서 관리하는 함수
+            // 인증 로직을 중앙에서 관리하는 함수
             function setupAuthentication() {
                 // 이벤트 리스너 등록
                 document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
@@ -592,7 +573,7 @@
                 });
             }
 
-            // FIX: 교사 자신의 데이터와 관리 목록을 로드하는 함수
+            // 교사 자신의 데이터와 관리 목록을 로드하는 함수
             function loadTeacherData(uid) {
                 const passagesCol = collection(db, `artifacts/${appId}/public/data/passages`);
                 const q = query(passagesCol, where("authorId", "==", uid));
@@ -608,13 +589,11 @@
                 });
             }
 
-            // FIX: 모든 학생과 교사가 볼 수 있는 전체 지문 목록을 로드하는 함수
+            // 모든 학생과 교사가 볼 수 있는 전체 지문 목록을 로드하는 함수
             function loadAllPassages() {
                 const passagesCol = collection(db, `artifacts/${appId}/public/data/passages`);
-                const q = query(passagesCol); // 정렬이 필요하다면 여기에 추가 (예: orderBy("createdAt", "desc"))
+                const q = query(passagesCol); 
                 
-                // 학생/익명 사용자는 한번만 데이터를 가져오고, 교사는 실시간 업데이트를 받도록 설정할 수 있음
-                // 여기서는 모든 사용자가 실시간 업데이트를 받도록 통일
                 unsubscribe = onSnapshot(q, (snapshot) => {
                     allDocuments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     // 최신순으로 정렬
