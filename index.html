@@ -166,7 +166,6 @@
 
     <!-- Firebase SDK 및 앱 로직 -->
     <script type="module">
-        // Firebase SDK import
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -188,7 +187,7 @@
                 runApp();
             } catch (error) {
                 console.error("Firebase 초기화 실패:", error);
-                document.body.innerHTML = `<div style="color: red; text-align: center; margin-top: 50px; padding: 20px;"><h1>앱 초기화 오류</h1><p>앱을 시작하는 중 심각한 문제가 발생했습니다. 관리자에게 문의하세요.</p><p style="color: #ccc; font-size: 12px; margin-top: 1rem;">오류: ${error.message}</p></div>`;
+                document.body.innerHTML = `<div style="color: red; text-align: center; margin-top: 50px; padding: 20px;"><h1>앱 초기화 오류</h1><p>앱을 시작하는 중 심각한 문제가 발생했습니다.</p><p style="color: #ccc; font-size: 12px; margin-top: 1rem;">오류: ${error.message}</p></div>`;
             }
         }
 
@@ -229,7 +228,6 @@
                 }
             };
 
-            // ... All other UI functions (createSlider, openModal, etc.) remain the same ...
             function createSlider() {
                 const sliderWrapper = document.getElementById('slider-wrapper');
                 sliderWrapper.innerHTML = '';
@@ -433,7 +431,6 @@
             // --- ⭐️ 최종 수정된 인증 로직 ⭐️ ---
 
             async function handleAuthentication() {
-                // 이벤트 리스너를 먼저 등록합니다.
                 document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
                 document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
                 document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
@@ -444,14 +441,11 @@
                 document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
 
                 try {
-                    // 페이지 로드 시 리디렉션 결과가 있는지 먼저 확인합니다.
                     const result = await getRedirectResult(auth);
                     if (result) {
-                        // 방금 Google 로그인을 완료한 경우입니다.
                         const user = result.user;
                         console.log("Redirect login successful for:", user.displayName);
                         await registerTeacherInFirestore(user);
-                        // onAuthStateChanged가 이어서 처리하므로 여기서 추가 작업은 불필요합니다.
                     }
                 } catch (error) {
                     console.error("Redirect Result Error:", error);
@@ -462,16 +456,13 @@
                     errorEl.innerText = '로그인에 실패했습니다. 다시 시도해주세요.';
                 }
 
-                // 이제 인증 상태 변화를 감지하는 리스너를 설정합니다.
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        // 사용자가 로그인되어 있습니다 (Google 또는 익명).
                         if (user.isAnonymous) {
                             console.log("onAuthStateChanged: Anonymous user detected.");
                             updateLoginUI(null, false);
                             loadStudentData();
                         } else {
-                            // Google 사용자입니다.
                             console.log("onAuthStateChanged: Google user detected.", user.displayName);
                             closeTeacherCodeModal();
                             const isTeacherStatus = await checkIfTeacher(user.uid);
@@ -481,18 +472,16 @@
                                 loadTeacherData(user.uid);
                             } else {
                                 console.warn("Google 사용자가 교사로 등록되지 않았습니다.");
-                                loadStudentData(); // 교사가 아니면 학생 데이터를 로드합니다.
+                                loadStudentData();
                             }
                         }
                     } else {
-                        // 로그인된 사용자가 아무도 없습니다. 익명으로 로그인합니다.
                         console.log("onAuthStateChanged: No user. Signing in anonymously.");
                         signInAnonymously(auth).catch(console.error);
                     }
                 });
             }
 
-            // 교사 데이터 로드 헬퍼 함수
             function loadTeacherData(uid) {
                 console.log("교사 데이터를 불러옵니다:", uid);
                 const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
@@ -505,7 +494,6 @@
                 });
             }
 
-            // 학생 데이터 로드 헬퍼 함수
             async function loadStudentData() {
                 console.log("모든 교사의 지문(학생용)을 불러옵니다.");
                 try {
@@ -529,7 +517,6 @@
                 }
             }
 
-            // 인증 로직 실행
             handleAuthentication();
         }
 
