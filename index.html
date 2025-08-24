@@ -184,7 +184,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         let app, db, auth;
@@ -348,18 +348,40 @@
                     provider.addScope('email');
                     
                     // 현재 사용자 상태와 관계없이 새로운 Google 로그인 시작
-                    console.log("🚀 Google 로그인 리디렉션 시작...");
+                    console.log("🚀 Google 로그인 시작...");
                     
                     // 먼저 현재 사용자를 로그아웃 (익명 포함)
                     if (auth.currentUser) {
                         console.log("👤 기존 사용자 로그아웃:", auth.currentUser.isAnonymous ? '익명' : auth.currentUser.email);
                         await signOut(auth);
                         // 로그아웃 완료 대기
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                     
-                    // 새로운 Google 로그인
-                    await signInWithRedirect(auth, provider);
+                    // signInWithRedirect 대신 signInWithPopup 시도
+                    console.log("🖱️ Google 팝업 로그인 시도...");
+                    try {
+                        const result = await signInWithPopup(auth, provider);
+                        console.log("✅ 팝업 로그인 성공:", result.user.email);
+                        
+                        // 교사 등록
+                        await registerTeacherInFirestore(result.user);
+                        localStorage.setItem('justRegisteredAsTeacher', 'true');
+                        
+                        // UI는 onAuthStateChanged에서 업데이트됨
+                        
+                    } catch (popupError) {
+                        console.log("❌ 팝업 실패, 리디렉션으로 전환:", popupError.code);
+                        if (popupError.code === 'auth/popup-blocked' || 
+                            popupError.code === 'auth/popup-closed-by-user' ||
+                            popupError.code === 'auth/cancelled-popup-request') {
+                            
+                            console.log("🔄 리디렉션으로 재시도...");
+                            await signInWithRedirect(auth, provider);
+                        } else {
+                            throw popupError;
+                        }
+                    }
                     
                 } catch (error) {
                     console.error("❌ Google 로그인 오류:", error);
@@ -368,12 +390,6 @@
                     document.getElementById('teacher-login-btn').style.display = 'block';
                     
                     let errorMessage = '로그인 중 오류가 발생했습니다: ' + error.message;
-                    if (error.code === 'auth/popup-blocked') {
-                        errorMessage = '팝업이 차단되었습니다. 팝업을 허용하고 다시 시도해주세요.';
-                    } else if (error.code === 'auth/cancelled-popup-request') {
-                        errorMessage = '로그인이 취소되었습니다.';
-                    }
-                    
                     openTeacherCodeModal();
                     document.getElementById('teacher-code-error').innerText = errorMessage;
                 }
