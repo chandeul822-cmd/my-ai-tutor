@@ -264,18 +264,27 @@
                 sliderContainer.id = 'slider-container';
                 sliderContainer.className = 'slider-container h-full';
                 const steps = [
-                    { type: 'factual', title: '사실적 질문', description: '지문에 나온 정보를 바탕으로 내용을 확인하는 질문을 만들어보세요. (예: 누가, 언제, 어디서, 무엇을, 어떻게 했나요?)' },
-                    { type: 'divergent', title: '발산적 질문', description: '지문 내용을 바탕으로 원인과 결과를 추론하거나, 다른 상황을 상상해보는 질문을 만들어보세요. (예: 왜 그랬을까요? 만약 ~했다면 어떻게 됐을까요?)' },
-                    { type: 'creative', title: '창의적 질문', description: '지문 내용을 넘어 새로운 아이디어를 더하거나, 자신의 생각을 표현하는 질문을 만들어보세요. (예: 이 다음 이야기는 어떻게 될까요? 나라면 어떻게 했을까요?)' }
+                    { type: 'factual', title: 'STEP 1. 사실적 질문 생성하기', description: '지문에 나온 정보를 바탕으로 내용을 확인하는 질문을 만들어보세요. (예: 누가, 언제, 어디서, 무엇을, 어떻게 했나요?)' },
+                    { type: 'divergent', title: 'STEP 2. 발산적 질문 생성하기', description: '지문 내용을 바탕으로 원인과 결과를 추론하거나, 다른 상황을 상상해보는 질문을 만들어보세요. (예: 왜 그랬을까요? 만약 ~했다면 어떻게 됐을까요?)' },
+                    { type: 'creative', title: 'STEP 3. 창의적 질문 생성하기', description: '지문 내용을 넘어 새로운 아이디어를 더하거나, 자신의 생각을 표현하는 질문을 만들어보세요. (예: 이 다음 이야기는 어떻게 될까요? 나라면 어떻게 했을까요?)' }
                 ];
+                const buttonColors = {
+                    factual: 'bg-green-600 hover:bg-green-700',
+                    divergent: 'bg-blue-600 hover:bg-blue-700',
+                    creative: 'bg-purple-600 hover:bg-purple-700'
+                };
+
                 steps.forEach((step, index) => {
                     const item = document.createElement('div');
-                    item.className = 'slider-item flex flex-col h-full p-4';
+                    item.className = 'slider-item flex flex-col h-full';
                     item.dataset.type = step.type;
                     let nextButtonHtml = (index < steps.length - 1)
                         ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
                         : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
-                    item.innerHTML = `<div class="flex-grow flex flex-col overflow-hidden"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button><div class="feedback-container hidden mt-4 flex-grow min-h-0 overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0">${nextButtonHtml}</div>`;
+                    
+                    const feedbackButtonColor = buttonColors[step.type] || 'bg-gray-600';
+
+                    item.innerHTML = `<div class="flex-grow flex flex-col overflow-hidden p-4"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full ${feedbackButtonColor} text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 요청하기</button><div class="feedback-container hidden mt-4 flex-grow min-h-0 overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0 p-4 pt-0">${nextButtonHtml}</div>`;
                     sliderContainer.appendChild(item);
                 });
                 sliderWrapper.appendChild(sliderContainer);
@@ -611,7 +620,7 @@
 
             function loadTeacherData(uid) {
                 console.log("교사 데이터 로딩 시작:", uid);
-                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
+                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
                 
                 return new Promise((resolve) => {
                     // 실시간 리스너 설정
@@ -945,7 +954,7 @@
                 const isPassing = currentScore >= 70;
                 
                 // 게이지 차트 생성
-                const gaugeHTML = createGaugeChart(feedback.scores);
+                const gaugeHTML = createGaugeChart(feedback.scores, questionType);
                 
                 // 피드백 UI 구성
                 let feedbackHTML = `
@@ -1018,16 +1027,25 @@
                 button.disabled = false;
             }
 
-            function createGaugeChart(scores) {
+            function createGaugeChart(scores, activeType) {
+                const typeColors = {
+                    factual: { main: '#39FF14', text: 'text-green-400' },
+                    divergent: { main: '#00BFFF', text: 'text-blue-400' },
+                    creative: { main: '#9370DB', text: 'text-purple-400' }
+                };
+                const typeNames = {
+                    'factual': '사실성',
+                    'divergent': '발산성',
+                    'creative': '창의성'
+                };
+
                 return `
                     <div class="grid grid-cols-3 gap-4 text-center">
                         ${Object.entries(scores).map(([type, score]) => {
-                            const typeNames = {
-                                'factual': '사실성',
-                                'divergent': '발산성',
-                                'creative': '창의성'
-                            };
-                            const color = score >= 70 ? '#10B981' : score >= 50 ? '#F59E0B' : '#EF4444';
+                            const isActive = type === activeType;
+                            const color = isActive ? typeColors[type].main : '#6B7280';
+                            const textColorClass = isActive ? typeColors[type].text : 'text-gray-400';
+                            
                             return `
                                 <div class="flex flex-col items-center">
                                     <div class="relative w-20 h-20 mb-2">
@@ -1038,10 +1056,10 @@
                                                     class="gauge-${type}" style="transition: stroke-dashoffset 2s ease-in-out"/>
                                         </svg>
                                         <div class="absolute inset-0 flex items-center justify-center">
-                                            <span class="text-sm font-bold score-${type}">0%</span>
+                                            <span class="text-sm font-bold score-${type} ${textColorClass}">0%</span>
                                         </div>
                                     </div>
-                                    <span class="text-xs text-gray-400">${typeNames[type]}</span>
+                                    <span class="text-xs ${textColorClass}">${typeNames[type]}</span>
                                 </div>
                             `;
                         }).join('')}
