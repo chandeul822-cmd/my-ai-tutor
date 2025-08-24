@@ -379,27 +379,43 @@
 
             async function registerTeacherInFirestore(user) {
                 try {
+                    console.log(`📝 교사 등록 시작: ${user.email}`);
                     const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, user.uid);
-                    await setDoc(teacherDocRef, { 
+                    const teacherData = { 
                         isTeacher: true, 
                         email: user.email,
                         displayName: user.displayName,
-                        registeredAt: serverTimestamp()
-                    });
-                    console.log("교사 등록 완료:", user.email);
+                        registeredAt: serverTimestamp(),
+                        uid: user.uid
+                    };
+                    console.log(`📝 등록할 데이터:`, teacherData);
+                    await setDoc(teacherDocRef, teacherData);
+                    console.log("✅ 교사 등록 완료:", user.email);
+                    
+                    // 등록 확인
+                    const checkDoc = await getDoc(teacherDocRef);
+                    console.log(`🔍 등록 확인:`, checkDoc.exists(), checkDoc.data());
+                    
                 } catch (error) {
-                    console.error("교사 등록 실패:", error);
+                    console.error("❌ 교사 등록 실패:", error);
                     throw error;
                 }
             }
 
             async function checkIfTeacher(uid) {
                 try {
+                    console.log(`🔍 교사 상태 확인 중: ${uid}`);
                     const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, uid);
                     const teacherDoc = await getDoc(teacherDocRef);
-                    return teacherDoc.exists() && teacherDoc.data().isTeacher === true;
+                    const isTeacher = teacherDoc.exists() && teacherDoc.data().isTeacher === true;
+                    console.log(`📋 Firestore 교사 문서 존재: ${teacherDoc.exists()}`);
+                    if (teacherDoc.exists()) {
+                        console.log(`📋 교사 데이터:`, teacherDoc.data());
+                    }
+                    console.log(`✅ 최종 교사 상태: ${isTeacher}`);
+                    return isTeacher;
                 } catch (error) {
-                    console.error("교사 확인 실패:", error);
+                    console.error("❌ 교사 확인 실패:", error);
                     return false;
                 }
             }
@@ -559,95 +575,135 @@
 
                 console.log("인증 시스템 초기화 시작...");
 
-                // 1. 먼저 리디렉션 결과 확인
+                // 페이지 로드 시 리디렉션 결과 먼저 확인
+                let redirectHandled = false;
+                
                 try {
+                    console.log("리디렉션 결과 확인 중...");
                     const result = await getRedirectResult(auth);
-                    if (result) {
+                    
+                    if (result && result.user) {
                         const user = result.user;
-                        console.log("리디렉션 결과 감지:", user.displayName, user.email);
+                        console.log("🎉 리디렉션 결과 감지! 사용자:", user.displayName, user.email);
+                        redirectHandled = true;
                         
                         // 교사 로그인 시도였는지 확인
                         const wasTeacherLogin = localStorage.getItem('teacherLoginAttempt');
-                        localStorage.removeItem('teacherLoginAttempt');
+                        console.log("교사 로그인 시도 플래그:", wasTeacherLogin);
                         
                         if (wasTeacherLogin) {
-                            console.log("교사 로그인 시도 감지, 교사로 등록...");
-                            await registerTeacherInFirestore(user);
+                            console.log("✅ 교사 로그인 시도 확인, 교사 등록 진행...");
+                            localStorage.removeItem('teacherLoginAttempt');
+                            
+                            try {
+                                await registerTeacherInFirestore(user);
+                                console.log("✅ 교사 Firestore 등록 완료");
+                                
+                                // 교사 등록 완료 플래그 설정
+                                localStorage.setItem('teacherRegistered', 'true');
+                                
+                            } catch (registerError) {
+                                console.error("❌ 교사 등록 실패:", registerError);
+                            }
                         }
                         
-                        // UI 업데이트는 onAuthStateChanged에서 처리됨
-                        return;
+                        // onAuthStateChanged는 자동으로 호출될 것임
+                    } else {
+                        console.log("리디렉션 결과 없음");
                     }
                 } catch (error) {
-                    console.error("리디렉션 결과 처리 오류:", error);
+                    console.error("❌ 리디렉션 결과 처리 오류:", error);
                     localStorage.removeItem('teacherLoginAttempt');
                     hideAuthLoading();
                     
-                    // 특정 오류에 대한 처리
+                    // 구체적인 오류 처리
                     if (error.code === 'auth/account-exists-with-different-credential') {
                         openTeacherCodeModal();
                         document.getElementById('teacher-code-error').innerText = 
-                            '이미 다른 방법으로 가입된 계정입니다. 기존 로그인 방법을 사용해주세요.';
+                            '이미 다른 방법으로 가입된 계정입니다. 다른 계정을 사용해주세요.';
                     } else {
                         openTeacherCodeModal();
                         document.getElementById('teacher-code-error').innerText = 
-                            '로그인에 실패했습니다. 다시 시도해주세요.';
+                            `로그인 오류: ${error.message}`;
                     }
                 }
 
-                // 2. 인증 상태 변경 리스너
+                // 인증 상태 변경 리스너
                 onAuthStateChanged(auth, async (user) => {
-                    console.log("인증 상태 변경 감지:", user ? (user.isAnonymous ? "익명" : user.displayName || user.email) : "없음");
+                    const userInfo = user ? 
+                        (user.isAnonymous ? "익명" : `${user.displayName || '이름없음'} (${user.email})`) 
+                        : "없음";
+                    console.log(`🔄 인증 상태 변경: ${userInfo}`);
                     
-                    if (user) {
-                        if (user.isAnonymous) {
-                            // 익명 사용자 - 학생 모드
-                            console.log("익명 사용자(학생) 모드");
+                    if (user && !user.isAnonymous) {
+                        // Google 사용자 로그인됨
+                        console.log("📱 Google 사용자 처리 시작...");
+                        
+                        try {
+                            // 교사 등록이 완료되었는지 확인
+                            const wasJustRegistered = localStorage.getItem('teacherRegistered');
+                            if (wasJustRegistered) {
+                                localStorage.removeItem('teacherRegistered');
+                                console.log("⏱️ 교사 등록 직후, 3초 대기...");
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                            } else {
+                                console.log("⏱️ 교사 상태 확인을 위해 1초 대기...");
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                            
+                            const isTeacherStatus = await checkIfTeacher(user.uid);
+                            console.log(`👨‍🏫 교사 상태 확인 결과: ${isTeacherStatus}`);
+                            
+                            updateLoginUI(user, isTeacherStatus);
+                            
+                            if (isTeacherStatus) {
+                                console.log("🎓 교사 모드로 데이터 로딩...");
+                                await loadTeacherData(user.uid);
+                            } else {
+                                console.log("👨‍🎓 교사가 아님, 학생 데이터 로딩...");
+                                await loadStudentData();
+                            }
+                            
+                        } catch (error) {
+                            console.error("❌ Google 사용자 처리 오류:", error);
                             updateLoginUI(null, false);
                             await loadStudentData();
-                            authInitialized = true;
-                        } else {
-                            // Google 사용자 - 교사 확인
-                            console.log("Google 사용자 감지:", user.displayName, user.email);
-                            
-                            try {
-                                // 잠깐 대기 후 교사 상태 확인 (Firestore 동기화 대기)
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-                                
-                                const isTeacherStatus = await checkIfTeacher(user.uid);
-                                console.log("교사 상태 확인:", isTeacherStatus);
-                                
-                                updateLoginUI(user, isTeacherStatus);
-                                
-                                if (isTeacherStatus) {
-                                    await loadTeacherData(user.uid);
-                                } else {
-                                    console.warn("Google 사용자가 교사로 등록되지 않음");
-                                    // 학생 데이터 로드
-                                    await loadStudentData();
-                                }
-                                authInitialized = true;
-                            } catch (error) {
-                                console.error("교사 상태 확인 오류:", error);
-                                updateLoginUI(null, false);
-                                await loadStudentData();
-                                authInitialized = true;
-                            }
                         }
-                    } else {
-                        // 사용자 없음 - 익명 로그인 시도
-                        console.log("사용자 없음, 익명 로그인 시도");
-                        if (!authInitialized) {
+                        
+                        authInitialized = true;
+                        
+                    } else if (user && user.isAnonymous) {
+                        // 익명 사용자
+                        console.log("👤 익명 사용자 모드");
+                        updateLoginUI(null, false);
+                        await loadStudentData();
+                        authInitialized = true;
+                        
+                    } else if (!user) {
+                        // 사용자 없음
+                        console.log("❌ 사용자 없음");
+                        if (!authInitialized && !redirectHandled) {
+                            console.log("🔄 익명 로그인 시도...");
                             try {
                                 await signInAnonymously(auth);
-                            } catch (error) {
-                                console.error("익명 로그인 실패:", error);
+                            } catch (anonError) {
+                                console.error("❌ 익명 로그인 실패:", anonError);
                                 updateLoginUI(null, false);
                                 authInitialized = true;
                             }
                         }
                     }
                 });
+                
+                // 추가 디버깅: 5초 후 현재 상태 로그
+                setTimeout(() => {
+                    const currentUser = auth.currentUser;
+                    console.log("🕐 5초 후 현재 상태:", {
+                        user: currentUser ? (currentUser.isAnonymous ? '익명' : currentUser.email) : '없음',
+                        initialized: authInitialized,
+                        isTeacher: isTeacher
+                    });
+                }, 5000);
             }
 
             function loadTeacherData(uid) {
