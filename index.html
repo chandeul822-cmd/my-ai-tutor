@@ -199,6 +199,7 @@
             let isTeacher = false;
             const TEACHER_SECRET_CODE = '0822';
 
+            // ... All other UI functions (renderDocumentCards, createSlider, openModal, etc.) remain the same ...
             const typeTranslations = { factual: '사실성', divergent: '발산성', creative: '창의성' };
             const getCompletionStatus = () => JSON.parse(localStorage.getItem('aiTutorCompletion') || '{}');
             const setCompletionStatus = (docId) => {
@@ -431,6 +432,7 @@
             // --- ⭐️ 최종 수정된 인증 로직 ⭐️ ---
 
             async function handleAuthentication() {
+                // 이벤트 리스너 등록
                 document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
                 document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
                 document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
@@ -440,30 +442,18 @@
                 document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
                 document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
 
-                try {
-                    const result = await getRedirectResult(auth);
-                    if (result) {
-                        const user = result.user;
-                        console.log("Redirect login successful for:", user.displayName);
-                        await registerTeacherInFirestore(user);
-                    }
-                } catch (error) {
-                    console.error("Redirect Result Error:", error);
-                    const errorEl = document.getElementById('teacher-code-error');
-                    if (!document.getElementById('teacher-code-modal').classList.contains('flex')) {
-                        openTeacherCodeModal();
-                    }
-                    errorEl.innerText = '로그인에 실패했습니다. 다시 시도해주세요.';
-                }
-
-                onAuthStateChanged(auth, async (user) => {
+                // onAuthStateChanged는 한 번만 설정하고, 앱의 인증 상태에 대한 '단일 소스'로 사용합니다.
+                const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                    // 이 리스너가 모든 인증 상태 변경을 처리합니다.
                     if (user) {
+                        // 사용자가 로그인되어 있습니다 (Google 또는 익명).
                         if (user.isAnonymous) {
-                            console.log("onAuthStateChanged: Anonymous user detected.");
+                            console.log("상태 변경: 익명 사용자 감지됨.");
                             updateLoginUI(null, false);
                             loadStudentData();
                         } else {
-                            console.log("onAuthStateChanged: Google user detected.", user.displayName);
+                            // Google 사용자입니다.
+                            console.log("상태 변경: Google 사용자 감지됨.", user.displayName);
                             closeTeacherCodeModal();
                             const isTeacherStatus = await checkIfTeacher(user.uid);
                             console.log(`교사 여부 확인 결과: ${isTeacherStatus}`);
@@ -472,14 +462,34 @@
                                 loadTeacherData(user.uid);
                             } else {
                                 console.warn("Google 사용자가 교사로 등록되지 않았습니다.");
-                                loadStudentData();
+                                loadStudentData(); // 교사가 아니면 학생 데이터를 로드합니다.
                             }
                         }
                     } else {
-                        console.log("onAuthStateChanged: No user. Signing in anonymously.");
+                        // 로그인된 사용자가 아무도 없습니다. 익명으로 로그인합니다.
+                        console.log("상태 변경: 사용자가 없음. 익명 로그인 시도.");
                         signInAnonymously(auth).catch(console.error);
                     }
                 });
+
+                // 페이지 로드 시, 리디렉션 결과가 있는지 확인합니다.
+                // 이 작업은 onAuthStateChanged 리스너를 트리거하여 위 로직이 실행되도록 합니다.
+                try {
+                    const result = await getRedirectResult(auth);
+                    if (result) {
+                        const user = result.user;
+                        console.log("리디렉션 로그인 성공:", user.displayName);
+                        // 교사로 등록합니다. onAuthStateChanged가 이어서 UI를 업데이트할 것입니다.
+                        await registerTeacherInFirestore(user);
+                    }
+                } catch (error) {
+                    console.error("리디렉션 결과 처리 오류:", error);
+                    const errorEl = document.getElementById('teacher-code-error');
+                    if (!document.getElementById('teacher-code-modal').classList.contains('flex')) {
+                        openTeacherCodeModal();
+                    }
+                    errorEl.innerText = '로그인에 실패했습니다. 다시 시도해주세요.';
+                }
             }
 
             function loadTeacherData(uid) {
