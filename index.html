@@ -312,9 +312,18 @@
             };
 
             const openTeacherCodeModal = () => {
-                document.getElementById('teacher-code-modal').classList.remove('hidden');
-                document.getElementById('teacher-code-modal').classList.add('flex');
-                document.getElementById('teacher-code-input').focus();
+                console.log("🚪 교사 코드 모달 열기 시도");
+                const modal = document.getElementById('teacher-code-modal');
+                const input = document.getElementById('teacher-code-input');
+                
+                if (modal && input) {
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                    input.focus();
+                    console.log("✅ 교사 코드 모달 열림");
+                } else {
+                    console.error("❌ 모달 요소를 찾을 수 없음:", { modal: !!modal, input: !!input });
+                }
             };
 
             const closeTeacherCodeModal = () => {
