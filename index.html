@@ -620,7 +620,7 @@
 
             function loadTeacherData(uid) {
                 console.log("교사 데이터 로딩 시작:", uid);
-                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
                 
                 return new Promise((resolve) => {
                     // 실시간 리스너 설정
@@ -844,7 +844,52 @@
                     }
                 },
                 completeAndCloseModal,
+                findAndHighlight: (elementId) => {
+                    clearHighlights(); // Use the existing function to reset the text
+
+                    const feedbackElement = document.getElementById(elementId);
+                    if (!feedbackElement) return;
+
+                    const feedbackText = feedbackElement.innerText;
+                    const passageEl = document.getElementById('modal-passage');
+                    const originalPassageText = window.documents[currentDocIndex].passage;
+
+                    const stopWords = new Set(['은', '는', '이', '가', '을', '를', '의', '에', '에서', '으로', '입니다', '습니다', '하고', '와', '과', '것', '수', '등', '그', '저', '것은', '있는', '하는', '그리고', '하지만', '그래서', '왜', '어떻게', '언제', '누가', '무엇을']);
+                    const keywords = feedbackText.replace(/[.,!?]/g, ' ').split(/\s+/).filter(word => word.length > 1 && !stopWords.has(word));
+
+                    if (keywords.length === 0) return;
+
+                    const sentences = originalPassageText.match(/[^.!?\n]+[.!?\n]*/g) || [originalPassageText];
+
+                    let bestSentence = '';
+                    let maxScore = 0;
+
+                    sentences.forEach(sentence => {
+                        let currentScore = 0;
+                        const uniqueWordsInSentence = new Set(sentence.toLowerCase().replace(/[.,!?]/g, '').split(/\s+/));
+                        
+                        keywords.forEach(keyword => {
+                            if (uniqueWordsInSentence.has(keyword.toLowerCase())) {
+                                currentScore++;
+                            }
+                        });
+
+                        if (currentScore > maxScore) {
+                            maxScore = currentScore;
+                            bestSentence = sentence.trim();
+                        }
+                    });
+
+                    if (maxScore > 0) {
+                        const highlightedHTML = originalPassageText.replace(
+                            bestSentence,
+                            `<span class="highlight">${bestSentence}</span>`
+                        );
+                        passageEl.innerHTML = highlightedHTML;
+                    }
+                },
                 getFeedback: async (button) => {
+                    clearHighlights();
                     const container = button.parentElement.querySelector('.feedback-container');
                     const textarea = button.parentElement.querySelector('textarea');
                     const question = textarea.value.trim();
@@ -952,54 +997,69 @@
                 const questionType = currentSlider.dataset.type;
                 const currentScore = feedback.scores[questionType];
                 const isPassing = currentScore >= 70;
+                const uniqueId = Date.now();
                 
                 // 게이지 차트 생성
                 const gaugeHTML = createGaugeChart(feedback.scores, questionType);
                 
                 // 피드백 UI 구성
-                let feedbackHTML = `
-                    <div class="space-y-4">
+                let feedbackHTML = `<div class="space-y-4">
                         <!-- 점수 게이지 -->
                         <div class="bg-gray-800 p-4 rounded-lg">
                             <h4 class="text-lg font-bold mb-4 text-center">질문 분석 결과</h4>
                             ${gaugeHTML}
-                        </div>
-                        
-                        <!-- 분석 근거 -->
+                        </div>`;
+
+                if (feedback.rationale) {
+                    const rationaleId = `rationale-${uniqueId}`;
+                    feedbackHTML += `
                         <div class="bg-gray-800 p-4 rounded-lg">
                             <h4 class="text-lg font-bold mb-2 text-blue-400">📊 분석 근거</h4>
-                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.rationale}</p>
-                        </div>
-                        
-                        <!-- 피드백 내용 -->
+                            <div class="flex items-start">
+                                <p id="${rationaleId}" class="text-gray-300 text-sm leading-relaxed flex-grow">${feedback.rationale}</p>
+                                <span class="ml-2 cursor-pointer text-lg flex-shrink-0" onclick="app.findAndHighlight('${rationaleId}')">🔍</span>
+                            </div>
+                        </div>`;
+                }
+
+                if (feedback.feedback) {
+                    const feedbackId = `feedback-${uniqueId}`;
+                    feedbackHTML += `
                         <div class="bg-gray-800 p-4 rounded-lg">
                             <h4 class="text-lg font-bold mb-2 ${isPassing ? 'text-green-400' : 'text-orange-400'}">
                                 ${isPassing ? '✅ 좋은 질문입니다!' : '⚠️ 개선이 필요합니다'}
                             </h4>
-                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.feedback}</p>
-                        </div>
-                `;
+                            <div class="flex items-start">
+                                <p id="${feedbackId}" class="text-gray-300 text-sm leading-relaxed flex-grow">${feedback.feedback}</p>
+                                <span class="ml-2 cursor-pointer text-lg flex-shrink-0" onclick="app.findAndHighlight('${feedbackId}')">🔍</span>
+                            </div>
+                        </div>`;
+                }
                 
-                // 힌트 표시
                 if (feedback.hints && feedback.hints.length > 0) {
+                    const hintsId = `hints-${uniqueId}`;
                     feedbackHTML += `
                         <div class="bg-purple-900/30 p-4 rounded-lg border border-purple-600/30">
                             <h4 class="text-purple-400 font-bold mb-2">💡 생각해볼 힌트</h4>
-                            <ul class="text-gray-300 text-sm space-y-1">
-                                ${feedback.hints.map(hint => `<li>• ${hint}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
+                            <div class="flex items-start">
+                                <ul id="${hintsId}" class="text-gray-300 text-sm space-y-1 flex-grow">
+                                    ${feedback.hints.map(hint => `<li>• ${hint}</li>`).join('')}
+                                </ul>
+                                <span class="ml-2 cursor-pointer text-lg flex-shrink-0" onclick="app.findAndHighlight('${hintsId}')">🔍</span>
+                            </div>
+                        </div>`;
                 }
                 
-                // 질문 예시 (70% 이상일 때만)
                 if (isPassing && feedback.example) {
+                    const exampleId = `example-${uniqueId}`;
                     feedbackHTML += `
                         <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-600/30">
                             <h4 class="text-blue-400 font-bold mb-2">🎯 비슷한 질문 예시</h4>
-                            <p class="text-gray-300 text-sm italic">"${feedback.example}"</p>
-                        </div>
-                    `;
+                            <div class="flex items-start">
+                                <p id="${exampleId}" class="text-gray-300 text-sm italic flex-grow">"${feedback.example}"</p>
+                                <span class="ml-2 cursor-pointer text-lg flex-shrink-0" onclick="app.findAndHighlight('${exampleId}')">🔍</span>
+                            </div>
+                        </div>`;
                 }
                 
                 feedbackHTML += `</div>`;
