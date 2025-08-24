@@ -13,7 +13,6 @@
             color: #E5E7EB;
         }
         .neon-green { color: #39FF14; }
-        .neon-blue { color: #00BFFF; }
         .card-hover-effect {
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
@@ -49,30 +48,12 @@
             min-width: 100%;
             transition: opacity 0.5s ease;
         }
-        .highlight {
-            background-color: rgba(57, 255, 20, 0.4);
-            padding: 2px 0;
-            border-radius: 3px;
-        }
         .scrollable-content::-webkit-scrollbar { width: 8px; }
         .scrollable-content::-webkit-scrollbar-track { background: #1f2937; }
         .scrollable-content::-webkit-scrollbar-thumb {
             background-color: #4b5563;
             border-radius: 10px;
             border: 2px solid #1f2937;
-        }
-        .gauge-circle-bg {
-            fill: none;
-            stroke: #374151;
-            stroke-width: 3.8;
-        }
-        .gauge-circle-value {
-            fill: none;
-            stroke-width: 3.8;
-            stroke-linecap: round;
-            transform: rotate(-90deg);
-            transform-origin: 50% 50%;
-            transition: stroke-dashoffset 1s ease-in-out;
         }
     </style>
 </head>
@@ -103,7 +84,7 @@
 
     <!-- 학습용 팝업 모달 -->
     <div id="modal" class="modal hidden fixed inset-0 bg-black bg-opacity-70 items-center justify-center p-4 z-40">
-        <div class="modal-content bg-gray-900 w-full h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div class="modal-content bg-gray-900 w-full h-full max-w-7xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             <div class="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0">
                 <h2 id="modal-title" class="text-xl font-bold"></h2>
                 <button id="close-modal-btn" class="text-gray-400 hover:text-white transition-colors">
@@ -126,7 +107,7 @@
             </div>
         </div>
     </div>
-
+    
     <!-- 교사 인증 코드 입력 모달 -->
     <div id="teacher-code-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center z-50">
         <div class="bg-gray-800 p-8 rounded-2xl shadow-lg w-full max-w-sm">
@@ -157,7 +138,7 @@
                     <button id="save-doc-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">저장하기</button>
                 </div>
                 <div class="w-1/2 flex flex-col">
-                    <h3 class="text-xl font-bold mb-4">지문 목록</h3>
+                    <h3 class="text-xl font-bold mb-4">내 지문 목록</h3>
                     <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4"></div>
                 </div>
             </div>
@@ -166,38 +147,36 @@
 
     <!-- Firebase SDK 및 앱 로직 -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         let app, db, auth;
 
-        async function initializeFirebase() {
+        function initializeFirebase() {
             try {
-                const response = await fetch('/.netlify/functions/get-firebase-config');
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ error: response.statusText }));
-                    throw new Error(`Firebase 설정 가져오기 실패: ${errorData.error}`);
+                if (typeof __firebase_config === 'undefined') {
+                    throw new Error("Firebase config is not available.");
                 }
-                const firebaseConfig = await response.json();
+                const firebaseConfig = JSON.parse(__firebase_config);
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 runApp();
             } catch (error) {
                 console.error("Firebase 초기화 실패:", error);
-                document.body.innerHTML = `<div style="color: red; text-align: center; margin-top: 50px; padding: 20px;"><h1>앱 초기화 오류</h1><p>앱을 시작하는 중 심각한 문제가 발생했습니다.</p><p style="color: #ccc; font-size: 12px; margin-top: 1rem;">오류: ${error.message}</p></div>`;
+                document.body.innerHTML = `<div class="text-red-400 text-center mt-10 p-5"><h1>앱 초기화 오류</h1><p>${error.message}</p></div>`;
             }
         }
 
         function runApp() {
             let documents = [];
-            window.documents = documents;
+            window.documents = documents; // Make documents accessible globally for modal
             let currentDocIndex = -1;
             let currentStep = 1;
             let isTeacher = false;
-            const TEACHER_SECRET_CODE = '0822';
+            const TEACHER_SECRET_CODE = '0822'; // 교사 인증 코드
 
             const typeTranslations = { factual: '사실성', divergent: '발산성', creative: '창의성' };
             const getCompletionStatus = () => JSON.parse(localStorage.getItem('aiTutorCompletion') || '{}');
@@ -211,7 +190,7 @@
                 const listEl = document.getElementById('document-list');
                 const noDocsEl = document.getElementById('no-documents');
                 listEl.innerHTML = '';
-                if (documents.length === 0 && !listEl.querySelector('.col-span-full')) {
+                if (documents.length === 0) {
                     noDocsEl.classList.remove('hidden');
                 } else {
                     noDocsEl.classList.add('hidden');
@@ -227,7 +206,7 @@
                     });
                 }
             };
-
+            
             function createSlider() {
                 const sliderWrapper = document.getElementById('slider-wrapper');
                 sliderWrapper.innerHTML = '';
@@ -281,7 +260,7 @@
                 }
                 closeModal();
             };
-
+            
             const openTeacherCodeModal = () => {
                 document.getElementById('teacher-code-modal').classList.remove('hidden');
                 document.getElementById('teacher-code-modal').classList.add('flex');
@@ -295,16 +274,15 @@
             };
 
             const verifyTeacherCodeAndLogin = async () => {
+                const inputCode = document.getElementById('teacher-code-input').value;
                 const errorEl = document.getElementById('teacher-code-error');
-                if (document.getElementById('teacher-code-input').value === TEACHER_SECRET_CODE) {
+                if (inputCode === TEACHER_SECRET_CODE) {
+                    errorEl.innerText = '인증 성공! Google 로그인 페이지로 이동합니다...';
                     const provider = new GoogleAuthProvider();
-                    errorEl.innerText = 'Google 로그인 페이지로 이동합니다...';
-                    try {
-                        await signInWithRedirect(auth, provider);
-                    } catch (error) {
-                        console.error("signInWithRedirect Error:", error);
-                        errorEl.innerText = `로그인 오류: ${error.message}`;
-                    }
+                    await signInWithRedirect(auth, provider).catch(e => {
+                        console.error("Google sign-in failed", e);
+                        errorEl.innerText = `로그인 오류: ${e.message}`;
+                    });
                 } else {
                     errorEl.innerText = '인증 코드가 일치하지 않습니다.';
                 }
@@ -312,10 +290,11 @@
 
             async function registerTeacherInFirestore(user) {
                 const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, user.uid);
-                await setDoc(teacherDocRef, { isTeacher: true });
+                await setDoc(teacherDocRef, { isTeacher: true, name: user.displayName, email: user.email });
             }
 
             async function checkIfTeacher(uid) {
+                if (!uid) return false;
                 const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, uid);
                 const teacherDoc = await getDoc(teacherDocRef);
                 return teacherDoc.exists();
@@ -348,7 +327,7 @@
                 resetForm();
             }
 
-            function closeTeacherDashboard() { 
+            function closeTeacherDashboard() {
                 document.getElementById('teacher-dashboard-modal').classList.add('hidden');
                 document.getElementById('teacher-dashboard-modal').classList.remove('flex');
             }
@@ -356,12 +335,17 @@
             function renderManageList() {
                 const listEl = document.getElementById('manage-doc-list');
                 listEl.innerHTML = '';
-                window.documents.forEach((doc) => {
+                const teacherDocs = window.documents.filter(doc => doc.authorId === auth.currentUser?.uid);
+                if (teacherDocs.length === 0) {
+                    listEl.innerHTML = '<p class="text-gray-400 text-center">아직 추가한 지문이 없습니다.</p>';
+                    return;
+                }
+                teacherDocs.forEach((doc) => {
                     const item = document.createElement('div');
                     item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
                     item.innerHTML = `<span class="truncate">${doc.title}</span><div class="flex-shrink-0"><button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button><button class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button></div>`;
                     item.querySelector('.bg-blue-600').onclick = () => editDocument(doc.id);
-                    item.querySelector('.bg-red-600').onclick = () => deleteDocument(doc.id, doc.title);
+                    item.querySelector('.bg-red-600').onclick = () => deleteDocument(doc.id);
                     listEl.appendChild(item);
                 });
             }
@@ -370,14 +354,23 @@
                 const title = document.getElementById('new-doc-title').value.trim();
                 const passage = document.getElementById('new-doc-passage').value.trim();
                 const docId = document.getElementById('edit-doc-id').value;
+
                 if (!auth.currentUser || auth.currentUser.isAnonymous || !title || !passage) return;
+                
                 const userId = auth.currentUser.uid;
-                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                const data = { title, passage, createdAt: serverTimestamp(), author: userId };
+                const passagesColPath = `artifacts/${appId}/public/data/passages`;
+
                 try {
                     if (docId) {
-                        await updateDoc(doc(db, passagesColPath, docId), { title, passage });
+                        const docRef = doc(db, passagesColPath, docId);
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists() && docSnap.data().authorId === userId) {
+                            await updateDoc(docRef, { title, passage });
+                        } else {
+                           console.error("Unauthorized attempt to edit document or document not found.");
+                        }
                     } else {
+                        const data = { title, passage, authorId: userId, createdAt: serverTimestamp() };
                         await addDoc(collection(db, passagesColPath), data);
                     }
                     resetForm();
@@ -396,11 +389,17 @@
                 }
             }
 
-            async function deleteDocument(docId, title) {
+            async function deleteDocument(docId) {
+                if (!auth.currentUser || auth.currentUser.isAnonymous) return;
+                const userId = auth.currentUser.uid;
+                const docRef = doc(db, `artifacts/${appId}/public/data/passages`, docId);
                 try {
-                    const userId = auth.currentUser.uid;
-                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                    await deleteDoc(doc(db, passagesColPath, docId));
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists() && docSnap.data().authorId === userId) {
+                        await deleteDoc(docRef);
+                    } else {
+                        console.error("Unauthorized attempt to delete document or document not found.");
+                    }
                 } catch (error) {
                     console.error("Delete Document Error:", error);
                 }
@@ -418,106 +417,169 @@
                 const slider = document.getElementById('slider-container');
                 if (slider) slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
                 document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
-                clearHighlights();
             }
-            
-            function clearHighlights() {
-                const passageEl = document.getElementById('modal-passage');
-                if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
-                    passageEl.innerText = window.documents[currentDocIndex].passage;
+
+            async function getFeedback(button) {
+                const sliderItem = button.closest('.slider-item');
+                const textarea = sliderItem.querySelector('textarea');
+                const feedbackContainer = sliderItem.querySelector('.feedback-container');
+                const nextBtn = sliderItem.querySelector('.next-btn');
+                const userQuestion = textarea.value.trim();
+                const questionType = sliderItem.dataset.type;
+
+                if (!userQuestion) {
+                    feedbackContainer.innerHTML = `<p class="text-yellow-400">질문을 먼저 입력해주세요.</p>`;
+                    feedbackContainer.classList.remove('hidden');
+                    return;
+                }
+
+                button.disabled = true;
+                button.innerHTML = '<span class="animate-pulse">피드백 생성 중...</span>';
+                feedbackContainer.classList.remove('hidden');
+                feedbackContainer.innerHTML = '<p class="text-gray-400 animate-pulse">AI가 질문을 분석하고 있습니다...</p>';
+
+                const passage = window.documents[currentDocIndex].passage;
+                const prompt = `당신은 학생들의 질문 만들기 능력을 향상시키는 데 도움을 주는 친절하고 격려하는 AI 튜터입니다. 다음 지문과 학생이 만든 질문을 분석하여, 구체적이고 건설적인 피드백을 한국어로 제공해주세요.
+
+                ### 지문
+                ${passage}
+                
+                ### 학생의 질문
+                - 질문 유형: ${typeTranslations[questionType]}
+                - 질문 내용: "${userQuestion}"
+
+                ### 피드백 요청사항
+                1.  **질문 유형 적합성**: 학생의 질문이 '${typeTranslations[questionType]}' 유형에 얼마나 잘 맞는지 분석해주세요.
+                2.  **질문 명확성**: 질문이 명확하고 구체적인지 평가해주세요.
+                3.  **탐구의 깊이**: 질문이 지문의 핵심 내용을 깊이 있게 파고드는지, 아니면 표면적인 정보만 묻는지 평가해주세요.
+                4.  **종합 피드백**: 긍정적인 점을 먼저 칭찬한 후, 질문을 더 좋게 만들 수 있는 구체적인 제안 1~2가지를 제시해주세요.
+                5.  **예상 점수**: 위 항목들을 종합하여 100점 만점의 예상 점수를 매겨주세요.
+                
+                ### 피드백 형식 (마크다운 사용)
+                **질문 유형 분석**: (분석 내용)
+                **명확성 및 구체성**: (분석 내용)
+                **탐구의 깊이**: (분석 내용)
+                ---
+                **총평 및 제안**: (칭찬과 함께 구체적인 개선 제안)
+                **예상 점수**: **(점수)/100**`;
+
+                try {
+                    let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                    const payload = { contents: chatHistory };
+                    const apiKey = ""; 
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates.length > 0) {
+                        let feedbackText = result.candidates[0].content.parts[0].text;
+                        feedbackText = feedbackText
+                            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-green-400">$1</strong>')
+                            .replace(/---/g, '<hr class="my-3 border-gray-600">')
+                            .replace(/^(.*?):/gm, '<strong class="text-blue-400">$1</strong>:');
+
+                        feedbackContainer.innerHTML = feedbackText;
+                        nextBtn.classList.remove('hidden');
+                        nextBtn.disabled = false;
+                        if (!nextBtn.textContent.includes('완료')) {
+                           nextBtn.classList.replace('bg-gray-700', 'bg-blue-600');
+                           nextBtn.classList.replace('text-gray-400', 'text-white');
+                        }
+                    } else {
+                        throw new Error("API response did not contain feedback.");
+                    }
+                } catch (error) {
+                    console.error("Gemini API Error:", error);
+                    feedbackContainer.innerHTML = `<p class="text-red-400">피드백 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>`;
+                } finally {
+                    button.disabled = false;
+                    button.innerHTML = 'AI 피드백 받기';
                 }
             }
-            
-            // --- ⭐️ 최종 수정된 인증 로직 ⭐️ ---
 
             async function handleAuthentication() {
+                // 교사 로그인 버튼 클릭 시 인증 코드 모달 열기
                 document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
+                
+                // 인증 코드 모달의 버튼 이벤트 리스너
+                document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
+                document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
+
+                // 기타 UI 이벤트 리스너
                 document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
                 document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
-                document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
-                document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
                 document.getElementById('close-modal-btn').addEventListener('click', closeModal);
                 document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
                 document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
 
+                // Google 로그인 후 리디렉션 처리
                 try {
                     const result = await getRedirectResult(auth);
-                    if (result) {
-                        const user = result.user;
-                        console.log("Redirect login successful for:", user.displayName);
-                        await registerTeacherInFirestore(user);
+                    if (result && result.user) {
+                        console.log("Redirect login successful for:", result.user.displayName);
+                        await registerTeacherInFirestore(result.user);
+                        closeTeacherCodeModal(); // 로그인 성공 시 코드 모달 닫기
                     }
                 } catch (error) {
                     console.error("Redirect Result Error:", error);
-                    const errorEl = document.getElementById('teacher-code-error');
-                    if (!document.getElementById('teacher-code-modal').classList.contains('flex')) {
-                        openTeacherCodeModal();
-                    }
-                    errorEl.innerText = '로그인에 실패했습니다. 다시 시도해주세요.';
                 }
 
+                // 인증 상태 변경 감지
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         if (user.isAnonymous) {
-                            console.log("onAuthStateChanged: Anonymous user detected.");
+                            console.log("Signed in anonymously.");
                             updateLoginUI(null, false);
-                            loadStudentData();
+                            loadAllPassages(); // 학생은 모든 지문 로드
                         } else {
-                            console.log("onAuthStateChanged: Google user detected.", user.displayName);
-                            closeTeacherCodeModal();
+                            console.log("Signed in as:", user.displayName);
                             const isTeacherStatus = await checkIfTeacher(user.uid);
-                            console.log(`교사 여부 확인 결과: ${isTeacherStatus}`);
                             updateLoginUI(user, isTeacherStatus);
-                            if (isTeacherStatus) {
-                                loadTeacherData(user.uid);
-                            } else {
-                                console.warn("Google 사용자가 교사로 등록되지 않았습니다.");
-                                loadStudentData();
-                            }
+                            loadAllPassages(); // 교사도 모든 지문 로드
                         }
                     } else {
-                        console.log("onAuthStateChanged: No user. Signing in anonymously.");
+                        console.log("No user signed in. Signing in anonymously for student view.");
                         signInAnonymously(auth).catch(console.error);
                     }
                 });
             }
 
-            function loadTeacherData(uid) {
-                console.log("교사 데이터를 불러옵니다:", uid);
-                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
-                onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
+            // 모든 사용자를 위한 통합 지문 로딩 함수
+            function loadAllPassages() {
+                console.log("Loading all passages for all users.");
+                const passagesColRef = collection(db, `artifacts/${appId}/public/data/passages`);
+                const q = query(passagesColRef);
+                onSnapshot(q, (snapshot) => {
                     documents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    window.documents = documents; // 전역 변수 업데이트
                     renderDocumentCards();
+                    // 대시보드가 열려있다면 목록도 갱신
                     if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
                         renderManageList();
                     }
+                }, (error) => {
+                    console.error("Error loading passages:", error);
+                    document.getElementById('document-list').innerHTML = `<div class="col-span-full text-center text-red-400"><p>데이터를 불러오는 데 실패했습니다.</p></div>`;
                 });
             }
 
-            async function loadStudentData() {
-                console.log("모든 교사의 지문(학생용)을 불러옵니다.");
-                try {
-                    const teachersRef = collection(db, `artifacts/${appId}/public/data/teachers`);
-                    const teacherSnapshot = await getDocs(teachersRef);
-                    let allPassages = [];
-                    for (const teacherDoc of teacherSnapshot.docs) {
-                        const userId = teacherDoc.id;
-                        const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                        const passageSnapshot = await getDocs(collection(db, passagesColPath));
-                        passageSnapshot.forEach(doc => {
-                            allPassages.push({ id: doc.id, ...doc.data() });
-                        });
-                    }
-                    documents = allPassages;
-                    renderDocumentCards();
-                } catch (error) {
-                    console.error("Firestore Permission Error:", error);
-                    const listEl = document.getElementById('document-list');
-                    listEl.innerHTML = `<div class="col-span-full text-center text-red-400 bg-red-900/20 p-8 rounded-2xl"><h3 class="text-2xl font-bold mb-4">데이터 로딩 실패</h3><p>지문 목록을 불러오는 데 필요한 데이터베이스 권한이 없습니다.</p><p class="mt-2 text-sm text-gray-400">관리자는 Firestore 보안 규칙을 확인해주세요.</p></div>`;
-                }
-            }
-
             handleAuthentication();
+            
+            window.app = {
+                nextStep: () => goToStep(currentStep + 1),
+                getFeedback,
+                completeAndCloseModal
+            };
         }
 
         initializeFirebase();
