@@ -86,6 +86,10 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .dragging {
+            opacity: 0.5;
+            background: #4b5563;
+        }
     </style>
 </head>
 <body class="p-4 sm:p-8">
@@ -126,11 +130,11 @@
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
             </div>
-            <div class="flex flex-grow overflow-hidden flex-col md:flex-row">
-                <div class="w-full md:w-1/2 p-6 overflow-y-auto bg-gray-800/50 scrollable-content">
+            <div class="grid grid-rows-2 md:grid-rows-1 md:grid-cols-2 flex-grow overflow-hidden">
+                <div class="p-6 overflow-y-auto bg-gray-800/50 scrollable-content">
                     <div id="modal-passage" class="text-gray-300 leading-relaxed whitespace-pre-wrap"></div>
                 </div>
-                <div class="w-full md:w-1/2 p-6 flex flex-col bg-gray-900 overflow-hidden">
+                <div class="p-6 flex flex-col bg-gray-900 overflow-hidden">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-2xl font-bold neon-green">질문 만들기</h3>
                         <div id="step-indicator" class="font-bold text-gray-400"></div>
@@ -174,7 +178,7 @@
                 </div>
                 <div class="w-1/2 flex flex-col">
                     <h3 class="text-xl font-bold mb-4">지문 목록</h3>
-                    <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4"></div>
+                    <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4 h-0"></div>
                      <div class="mt-6 p-4 bg-gray-900 rounded-lg">
                         <h4 class="text-lg font-bold mb-2 text-green-400">학생 초대 링크</h4>
                         <p class="text-sm text-gray-400 mb-3">이 링크를 학생들에게 공유하면 선생님의 지문만 볼 수 있습니다.</p>
@@ -191,7 +195,7 @@
     <!-- Firebase SDK 및 앱 로직 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -512,7 +516,9 @@
                 
                 window.documents.forEach((doc) => {
                     const item = document.createElement('div');
-                    item.className = 'bg-gray-700 p-4 rounded-lg mb-3 hover:bg-gray-600 transition-colors';
+                    item.className = 'bg-gray-700 p-4 rounded-lg mb-3 hover:bg-gray-600 transition-colors cursor-grab';
+                    item.draggable = true;
+                    item.dataset.id = doc.id;
                     
                     // 생성일 표시
                     const createdDate = doc.createdAt?.toDate ? 
@@ -559,13 +565,6 @@
                 
                 const userId = auth.currentUser.uid;
                 const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                const data = { 
-                    title, 
-                    passage, 
-                    createdAt: serverTimestamp(), 
-                    author: userId,
-                    authorName: auth.currentUser.displayName || auth.currentUser.email
-                };
                 
                 try {
                     if (docId) {
@@ -576,6 +575,14 @@
                         });
                         console.log("지문 수정 완료:", title);
                     } else {
+                        const data = { 
+                            title, 
+                            passage, 
+                            createdAt: serverTimestamp(), 
+                            author: userId,
+                            authorName: auth.currentUser.displayName || auth.currentUser.email,
+                            order: Date.now() // 순서 필드 추가
+                        };
                         await addDoc(collection(db, passagesColPath), data);
                         console.log("지문 추가 완료:", title);
                     }
@@ -647,6 +654,9 @@
                             ...doc.data() 
                         }));
                         
+                        // 순서 필드(order) 기준으로 정렬, 없으면 생성일(createdAt) 기준
+                        documents.sort((a, b) => (a.order || a.createdAt?.toMillis()) - (b.order || b.createdAt?.toMillis()));
+
                         // 글로벌 documents 배열 업데이트
                         window.documents = documents;
                         
@@ -692,11 +702,7 @@
                     documents = passageSnapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data()
-                    })).sort((a, b) => {
-                        const aTime = a.createdAt?.toDate?.() || new Date(0);
-                        const bTime = b.createdAt?.toDate?.() || new Date(0);
-                        return bTime - aTime;
-                    });
+                    })).sort((a, b) => (a.order || a.createdAt?.toMillis()) - (b.order || b.createdAt?.toMillis()));
 
                     window.documents = documents;
                     console.log(`총 ${documents.length}개의 지문 로드됨 (교사: ${teacherId})`);
@@ -1187,6 +1193,76 @@
                     }
                 });
             }
+
+            // Drag and Drop Logic
+            let draggedItem = null;
+
+            function handleDragStart(e) {
+                draggedItem = this;
+                setTimeout(() => {
+                    this.classList.add('dragging');
+                }, 0);
+            }
+
+            function handleDragEnd() {
+                this.classList.remove('dragging');
+                draggedItem = null;
+            }
+
+            function handleDragOver(e) {
+                e.preventDefault();
+                const listContainer = document.getElementById('manage-doc-list');
+                const afterElement = getDragAfterElement(listContainer, e.clientY);
+                if (afterElement == null) {
+                    listContainer.appendChild(draggedItem);
+                } else {
+                    listContainer.insertBefore(draggedItem, afterElement);
+                }
+            }
+
+            async function handleDrop() {
+                const listContainer = document.getElementById('manage-doc-list');
+                const newOrderIds = [...listContainer.children].map(child => child.dataset.id);
+                
+                const newDocumentsArray = newOrderIds.map(id => window.documents.find(doc => doc.id === id));
+                window.documents = newDocumentsArray;
+
+                const userId = auth.currentUser.uid;
+                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                const batch = writeBatch(db);
+
+                newDocumentsArray.forEach((doc, index) => {
+                    const docRef = doc(db, passagesColPath, doc.id);
+                    batch.update(docRef, { order: index });
+                });
+
+                try {
+                    await batch.commit();
+                    console.log("지문 순서 저장 완료");
+                } catch (error) {
+                    console.error("순서 저장 실패:", error);
+                }
+            }
+
+            function getDragAfterElement(container, y) {
+                const draggableElements = [...container.querySelectorAll('[draggable="true"]:not(.dragging)')];
+
+                return draggableElements.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = y - box.top - box.height / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    } else {
+                        return closest;
+                    }
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            }
+
+            document.getElementById('manage-doc-list').addEventListener('dragstart', handleDragStart);
+            document.getElementById('manage-doc-list').addEventListener('dragend', handleDragEnd);
+            document.getElementById('manage-doc-list').addEventListener('dragover', handleDragOver);
+            document.getElementById('manage-doc-list').addEventListener('drop', handleDrop);
+
 
             handleAuthentication();
         }
