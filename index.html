@@ -456,11 +456,18 @@
             }
 
             function openTeacherDashboard() {
-                if (!isTeacher) return;
+                if (!isTeacher) {
+                    alert('교사만 접근 가능합니다.');
+                    return;
+                }
+                
+                console.log('교사 대시보드 열기, 현재 지문 수:', window.documents.length);
                 document.getElementById('teacher-dashboard-modal').classList.remove('hidden');
                 document.getElementById('teacher-dashboard-modal').classList.add('flex');
-                renderManageList();
+                
+                // 폼 초기화 후 지문 목록 렌더링
                 resetForm();
+                renderManageList();
             }
 
             function closeTeacherDashboard() { 
@@ -471,14 +478,47 @@
             function renderManageList() {
                 const listEl = document.getElementById('manage-doc-list');
                 listEl.innerHTML = '';
+                
+                if (window.documents.length === 0) {
+                    listEl.innerHTML = '<div class="text-gray-400 text-center py-8">저장된 지문이 없습니다.</div>';
+                    return;
+                }
+                
                 window.documents.forEach((doc) => {
                     const item = document.createElement('div');
-                    item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
-                    item.innerHTML = `<span class="truncate">${doc.title}</span><div class="flex-shrink-0"><button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button><button class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button></div>`;
-                    item.querySelector('.bg-blue-600').onclick = () => editDocument(doc.id);
-                    item.querySelector('.bg-red-600').onclick = () => deleteDocument(doc.id, doc.title);
+                    item.className = 'bg-gray-700 p-4 rounded-lg mb-3 hover:bg-gray-600 transition-colors';
+                    
+                    // 생성일 표시
+                    const createdDate = doc.createdAt?.toDate ? 
+                        new Date(doc.createdAt.toDate()).toLocaleDateString('ko-KR') : 
+                        '날짜 없음';
+                    
+                    item.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div class="flex-grow mr-4">
+                                <h4 class="font-bold text-white mb-1 truncate">${doc.title}</h4>
+                                <p class="text-sm text-gray-400 mb-2">${createdDate}</p>
+                                <p class="text-xs text-gray-500 line-clamp-2">${doc.passage.substring(0, 100)}...</p>
+                            </div>
+                            <div class="flex-shrink-0 flex gap-2">
+                                <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded text-sm transition-colors">
+                                    수정
+                                </button>
+                                <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded text-sm transition-colors">
+                                    삭제
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // 이벤트 리스너 추가
+                    item.querySelector('.edit-btn').onclick = () => editDocument(doc.id);
+                    item.querySelector('.delete-btn').onclick = () => deleteDocument(doc.id, doc.title);
+                    
                     listEl.appendChild(item);
                 });
+                
+                console.log(`지문 목록 렌더링 완료: ${window.documents.length}개`);
             }
 
             async function handleSaveDocument() {
@@ -503,13 +543,25 @@
                 
                 try {
                     if (docId) {
-                        await updateDoc(doc(db, passagesColPath, docId), { title, passage, updatedAt: serverTimestamp() });
+                        await updateDoc(doc(db, passagesColPath, docId), { 
+                            title, 
+                            passage, 
+                            updatedAt: serverTimestamp() 
+                        });
                         console.log("지문 수정 완료:", title);
                     } else {
                         await addDoc(collection(db, passagesColPath), data);
                         console.log("지문 추가 완료:", title);
                     }
+                    
                     resetForm();
+                    
+                    // 저장 후 목록을 강제로 다시 렌더링
+                    setTimeout(() => {
+                        renderManageList();
+                        console.log('저장 후 목록 갱신 완료');
+                    }, 1000);
+                    
                 } catch (error) {
                     console.error("지문 저장 오류:", error);
                     alert('지문 저장에 실패했습니다. 다시 시도해주세요.');
