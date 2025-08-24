@@ -1,558 +1,10 @@
-function closeTeacherDashboard() { 
-                document.getElementById('teacher-dashboard-modal').classList.add('hidden');
-                document.getElementById('teacher-dashboard-modal').classList.remove('flex');
-            }
-
-            function renderManageList() {
-                const listEl = document.getElementById('manage-doc-list');
-                listEl.innerHTML = '';
-                
-                const sortedDocuments = [...window.documents].sort((a, b) => {
-                    const orderA = a.order || 0;
-                    const orderB = b.order || 0;
-                    return orderA - orderB;
-                });
-                
-                sortedDocuments.forEach((doc, index) => {
-                    const item = document.createElement('div');
-                    item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex items-center transition-colors hover:bg-gray-600';
-                    item.dataset.docId = doc.id;
-                    item.innerHTML = `
-                        <div class="drag-handle mr-3 p-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                            </svg>
-                        </div>
-                        <div class="flex-grow">
-                            <div class="font-bold truncate mb-1">${doc.title}</div>
-                            <div class="text-xs text-gray-400">
-                                ${new Date(doc.createdAt?.toDate?.() || Date.now()).toLocaleDateString('ko-KR')}
-                            </div>
-                        </div>
-                        <div class="flex-shrink-0 flex gap-2">
-                            <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors">
-                                수정
-                            </button>
-                            <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors">
-                                삭제
-                            </button>
-                        </div>
-                    `;
-                    
-                    item.querySelector('.edit-btn').onclick = (e) => {
-                        e.stopPropagation();
-                        editDocument(doc.id);
-                    };
-                    item.querySelector('.delete-btn').onclick = (e) => {
-                        e.stopPropagation();
-                        deleteDocument(doc.id, doc.title);
-                    };
-                    
-                    listEl.appendChild(item);
-                });
-                
-                if (listEl.children.length > 0) {
-                    new Sortable(listEl, {
-                        handle: '.drag-handle',
-                        animation: 150,
-                        ghostClass: 'sortable-ghost',
-                        chosenClass: 'sortable-chosen',
-                        onEnd: async (evt) => {
-                            const docId = evt.item.dataset.docId;
-                            const newOrder = evt.newIndex;
-                            console.log(`지문 ${docId}를 ${newOrder} 위치로 이동`);
-                            
-                            try {
-                                await updateDocumentOrder(docId, newOrder);
-                            } catch (error) {
-                                console.error('순서 업데이트 실패:', error);
-                                renderManageList();
-                            }
-                        }
-                    });
-                }
-            }
-
-            async function updateDocumentOrder(docId, newOrder) {
-                try {
-                    const userId = auth.currentUser.uid;
-                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                    await updateDoc(doc(db, passagesColPath, docId), { 
-                        order: newOrder,
-                        updatedAt: serverTimestamp() 
-                    });
-                    console.log("지문 순서 업데이트 완료:", docId, newOrder);
-                } catch (error) {
-                    console.error("지문 순서 업데이트 오류:", error);
-                    throw error;
-                }
-            }
-
-            async function handleSaveDocument() {
-                const title = document.getElementById('new-doc-title').value.trim();
-                const passage = document.getElementById('new-doc-passage').value.trim();
-                const docId = document.getElementById('edit-doc-id').value;
-                
-                if (!auth.currentUser || auth.currentUser.isAnonymous || !title || !passage) {
-                    alert('제목과 내용을 모두 입력해주세요.');
-                    return;
-                }
-                
-                const userId = auth.currentUser.uid;
-                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                
-                try {
-                    if (docId) {
-                        await updateDoc(doc(db, passagesColPath, docId), { 
-                            title, 
-                            passage, 
-                            updatedAt: serverTimestamp() 
-                        });
-                        console.log("지문 수정 완료:", title);
-                    } else {
-                        const maxOrder = Math.max(...window.documents.map(d => d.order || 0), -1);
-                        const data = { 
-                            title, 
-                            passage, 
-                            createdAt: serverTimestamp(),
-                            updatedAt: serverTimestamp(),
-                            author: userId,
-                            authorName: auth.currentUser.displayName || auth.currentUser.email,
-                            order: maxOrder + 1
-                        };
-                        await addDoc(collection(db, passagesColPath), data);
-                        console.log("지문 추가 완료:", title);
-                    }
-                    resetForm();
-                } catch (error) {
-                    console.error("지문 저장 오류:", error);
-                    alert('지문 저장에 실패했습니다. 다시 시도해주세요.');
-                }
-            }
-
-            function editDocument(docId) {
-                const docData = window.documents.find(d => d.id === docId);
-                if(docData) {
-                    document.getElementById('form-title').innerText = '지문 수정';
-                    document.getElementById('new-doc-title').value = docData.title;
-                    document.getElementById('new-doc-passage').value = docData.passage;
-                    document.getElementById('edit-doc-id').value = docData.id;
-                }
-            }
-
-            async function deleteDocument(docId, title) {
-                if (!confirm(`"${title}" 지문을 정말로 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
-                
-                try {
-                    const userId = auth.currentUser.uid;
-                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                    await deleteDoc(doc(db, passagesColPath, docId));
-                    console.log("지문 삭제 완료:", title);
-                    
-                    const successMsg = document.createElement('div');
-                    successMsg.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
-                    successMsg.textContent = `"${title}" 지문이 삭제되었습니다.`;
-                    document.body.appendChild(successMsg);
-                    
-                    setTimeout(() => {
-                        document.body.removeChild(successMsg);
-                    }, 3000);
-                    
-                } catch (error) {
-                    console.error("지문 삭제 오류:", error);
-                    alert('지문 삭제에 실패했습니다.');
-                }
-            }
-
-            function resetForm() {
-                document.getElementById('form-title').innerText = '새 지문 추가';
-                document.getElementById('new-doc-title').value = '';
-                document.getElementById('new-doc-passage').value = '';
-                document.getElementById('edit-doc-id').value = '';
-            }
-            
-            function goToStep(step) {
-                currentStep = step;
-                const slider = document.getElementById('slider-container');
-                if (slider) slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
-                document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
-                clearHighlights();
-            }
-            
-            function clearHighlights() {
-                const passageEl = document.getElementById('modal-passage');
-                if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
-                    passageEl.innerText = window.documents[currentDocIndex].passage;
-                }
-            }
-
-            function loadTeacherData(uid) {
-                console.log("교사 데이터 로딩 시작:", uid);
-                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
-                
-                return new Promise((resolve) => {
-                    onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
-                        documents = snapshot.docs.map(doc => ({ 
-                            id: doc.id, 
-                            ...doc.data() 
-                        }));
-                        
-                        documents.sort((a, b) => {
-                            const orderA = a.order || 0;
-                            const orderB = b.order || 0;
-                            return orderA - orderB;
-                        });
-                        
-                        console.log(`교사 지문 ${documents.length}개 로드됨`);
-                        renderDocumentCards();
-                        
-                        if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
-                            renderManageList();
-                        }
-                        resolve();
-                    }, (error) => {
-                        console.error("교사 데이터 로딩 오류:", error);
-                        resolve();
-                    });
-                });
-            }
-
-            async function loadStudentData() {
-                console.log("학생 데이터 로딩 시작");
-                try {
-                    const teachersRef = collection(db, `artifacts/${appId}/public/data/teachers`);
-                    const teacherSnapshot = await getDocs(teachersRef);
-                    
-                    let allPassages = [];
-                    const promises = [];
-                    
-                    teacherSnapshot.forEach((teacherDoc) => {
-                        const userId = teacherDoc.id;
-                        const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                        
-                        promises.push(
-                            getDocs(collection(db, passagesColPath)).then(passageSnapshot => {
-                                passageSnapshot.forEach(doc => {
-                                    allPassages.push({ 
-                                        id: doc.id, 
-                                        ...doc.data(),
-                                        teacherId: userId,
-                                        teacherName: teacherDoc.data().displayName || teacherDoc.data().email || '익명 교사'
-                                    });
-                                });
-                            })
-                        );
-                    });
-                    
-                    await Promise.all(promises);
-                    
-                    const groupedByTeacher = {};
-                    allPassages.forEach(passage => {
-                        const teacherId = passage.teacherId;
-                        if (!groupedByTeacher[teacherId]) {
-                            groupedByTeacher[teacherId] = [];
-                        }
-                        groupedByTeacher[teacherId].push(passage);
-                    });
-                    
-                    documents = [];
-                    Object.values(groupedByTeacher).forEach(teacherPassages => {
-                        teacherPassages.sort((a, b) => {
-                            const orderA = a.order || 0;
-                            const orderB = b.order || 0;
-                            return orderA - orderB;
-                        });
-                        documents.push(...teacherPassages);
-                    });
-                    
-                    console.log(`총 ${documents.length}개의 지문 로드됨 (${Object.keys(groupedByTeacher).length}명의 교사)`);
-                    renderDocumentCards();
-                    
-                } catch (error) {
-                    console.error("학생 데이터 로딩 오류:", error);
-                    const listEl = document.getElementById('document-list');
-                    listEl.innerHTML = `
-                        <div class="col-span-full text-center text-red-400 bg-red-900/20 p-8 rounded-2xl">
-                            <h3 class="text-2xl font-bold mb-4">데이터 로딩 실패</h3>
-                            <p>지문 목록을 불러올 수 없습니다.</p>
-                            <p class="mt-2 text-sm text-gray-400">네트워크 연결을 확인하거나 나중에 다시 시도해주세요.</p>
-                            <button onclick="location.reload()" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
-                                새로고침
-                            </button>
-                        </div>
-                    `;
-                }
-            }
-
-            async function handleAuthentication() {
-                document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
-                document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
-                document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
-                document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
-                document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
-                document.getElementById('close-modal-btn').addEventListener('click', closeModal);
-                document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
-                document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
-
-                document.getElementById('teacher-code-input').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        verifyTeacherCodeAndLogin();
-                    }
-                });
-
-                console.log("🚀 인증 시스템 초기화 시작...");
-
-                const teacherAttempt = localStorage.getItem('teacherLoginAttempt');
-                if (teacherAttempt) {
-                    console.log("📋 교사 로그인 시도 감지:", teacherAttempt);
-                    showAuthLoading();
-                }
-
-                let redirectUser = null;
-                try {
-                    console.log("🔍 리디렉션 결과 확인 중...");
-                    const result = await getRedirectResult(auth);
-                    
-                    if (result && result.user) {
-                        redirectUser = result.user;
-                        console.log("🎉 리디렉션 성공! 사용자:", redirectUser.displayName, redirectUser.email);
-                        
-                        const teacherAttemptData = localStorage.getItem('teacherLoginAttempt');
-                        
-                        if (teacherAttemptData) {
-                            console.log("✅ 교사 로그인 시도 확인됨, 교사 등록 진행...");
-                            localStorage.removeItem('teacherLoginAttempt');
-                            
-                            try {
-                                await registerTeacherInFirestore(redirectUser);
-                                console.log("✅ 교사 등록 완료!");
-                                localStorage.setItem('justRegisteredAsTeacher', 'true');
-                            } catch (registerError) {
-                                console.error("❌ 교사 등록 실패:", registerError);
-                            }
-                        } else {
-                            console.log("ℹ️ 일반 Google 로그인");
-                        }
-                    } else {
-                        console.log("ℹ️ 리디렉션 결과 없음 (정상)");
-                    }
-                } catch (redirectError) {
-                    console.error("❌ 리디렉션 오류:", redirectError);
-                    localStorage.removeItem('teacherLoginAttempt');
-                    hideAuthLoading();
-                    
-                    setTimeout(() => {
-                        openTeacherCodeModal();
-                        document.getElementById('teacher-code-error').innerText = `로그인 오류: ${redirectError.message}`;
-                    }, 1000);
-                }
-
-                onAuthStateChanged(auth, async (user) => {
-                    const userInfo = user ? 
-                        (user.isAnonymous ? "익명 사용자" : `${user.displayName || '이름없음'} (${user.email})`) 
-                        : "사용자 없음";
-                    console.log(`🔄 인증 상태 변경: ${userInfo}`);
-                    
-                    if (user && !user.isAnonymous) {
-                        console.log("✅ Google 사용자 인증됨:", user.displayName, user.email);
-                        hideAuthLoading();
-                        
-                        try {
-                            const justRegistered = localStorage.getItem('justRegisteredAsTeacher');
-                            if (justRegistered) {
-                                localStorage.removeItem('justRegisteredAsTeacher');
-                                console.log("⏰ 교사 등록 직후, 5초 대기 중...");
-                                await new Promise(resolve => setTimeout(resolve, 5000));
-                            } else {
-                                console.log("⏰ 일반 교사 상태 확인, 2초 대기 중...");
-                                await new Promise(resolve => setTimeout(resolve, 2000));
-                            }
-                            
-                            const isTeacherStatus = await checkIfTeacher(user.uid);
-                            console.log(`👨‍🏫 최종 교사 상태: ${isTeacherStatus}`);
-                            
-                            updateLoginUI(user, isTeacherStatus);
-                            
-                            if (isTeacherStatus) {
-                                console.log("📚 교사 데이터 로딩...");
-                                await loadTeacherData(user.uid);
-                            } else {
-                                console.log("📖 학생 데이터 로딩...");
-                                await loadStudentData();
-                            }
-                            
-                        } catch (error) {
-                            console.error("❌ Google 사용자 처리 중 오류:", error);
-                            updateLoginUI(null, false);
-                            await loadStudentData();
-                        }
-                        
-                        authInitialized = true;
-                        
-                    } else if (user && user.isAnonymous) {
-                        console.log("👤 익명 사용자 처리");
-                        hideAuthLoading();
-                        updateLoginUI(null, false);
-                        
-                        if (!authInitialized) {
-                            await loadStudentData();
-                            authInitialized = true;
-                        }
-                        
-                    } else {
-                        console.log("❌ 사용자 없음, 익명 로그인 시도");
-                        
-                        if (!authInitialized && !redirectUser) {
-                            try {
-                                await signInAnonymously(auth);
-                            } catch (anonError) {
-                                console.error("❌ 익명 로그인 실패:", anonError);
-                                hideAuthLoading();
-                                updateLoginUI(null, false);
-                                authInitialized = true;
-                            }
-                        }
-                    }
-                });
-                
-                setTimeout(() => {
-                    const currentUser = auth.currentUser;
-                    console.log("🕙 10초 후 최종 상태 확인:", {
-                        user: currentUser ? (currentUser.isAnonymous ? '익명' : currentUser.email) : '없음',
-                        initialized: authInitialized,
-                        isTeacher: isTeacher,
-                        redirectUser: redirectUser ? redirectUser.email : '없음'
-                    });
-                }, 10000);
-            }
-
-            // 전역 함수 등록
-            window.appFunctions = {
-                nextStep: () => {
-                    if (currentStep < 3) {
-                        goToStep(currentStep + 1);
-                    }
-                },
-                completeAndCloseModal,
-                getFeedback: (button) => {
-                    const container = button.parentElement.querySelector('.feedback-container');
-                    const textarea = button.parentElement.querySelector('textarea');
-                    const question = textarea.value.trim();
-                    
-                    if (!question) {
-                        alert('질문을 입력해주세요.');
-                        return;
-                    }
-                    
-                    const currentSlider = document.querySelector('.slider-item:nth-child(' + currentStep + ')');
-                    const questionType = currentSlider.dataset.type;
-                    
-                    container.innerHTML = '<div class="text-blue-400 mb-2">AI 피드백을 분석 중입니다...</div>';
-                    container.classList.remove('hidden');
-                    
-                    setTimeout(() => {
-                        let feedback = '';
-                        const questionLength = question.length;
-                        const hasQuestionMark = question.includes('?') || question.includes('？');
-                        
-                        if (questionType === 'factual') {
-                            if (hasQuestionMark && questionLength > 10) {
-                                feedback = `
-                                    <div class="text-green-400 font-bold mb-2">✅ 좋은 사실적 질문입니다!</div>
-                                    <div class="text-gray-300 text-sm mb-3">
-                                        • 지문의 내용을 정확히 확인할 수 있는 질문이네요.<br>
-                                        • 구체적이고 명확한 답을 요구하는 좋은 질문입니다.
-                                    </div>
-                                    <div class="text-yellow-400 text-sm">
-                                        💡 <strong>개선 제안:</strong> "누가, 언제, 어디서, 무엇을" 등의 요소를 더 명확히 포함해보세요.
-                                    </div>
-                                `;
-                            } else {
-                                feedback = `
-                                    <div class="text-orange-400 font-bold mb-2">⚠️ 사실적 질문을 개선해보세요</div>
-                                    <div class="text-gray-300 text-sm mb-3">
-                                        ${!hasQuestionMark ? '• 질문 형태로 작성해주세요 (? 사용)<br>' : ''}
-                                        ${questionLength <= 10 ? '• 더 구체적으로 질문해주세요<br>' : ''}
-                                        • 지문에 명시된 사실을 확인하는 질문이 좋습니다.
-                                    </div>
-                                    <div class="text-blue-400 text-sm">
-                                        💡 <strong>예시:</strong> "주인공이 언제 어디로 이동했나요?"
-                                    </div>
-                                `;
-                            }
-                        } else if (questionType === 'divergent') {
-                            if (hasQuestionMark && questionLength > 15) {
-                                feedback = `
-                                    <div class="text-green-400 font-bold mb-2">✅ 훌륭한 발산적 질문입니다!</div>
-                                    <div class="text-gray-300 text-sm mb-3">
-                                        • 지문 내용을 바탕으로 추론하고 확장하는 질문이네요.<br>
-                                        • 다양한 관점에서 생각해볼 수 있는 좋은 질문입니다.
-                                    </div>
-                                    <div class="text-yellow-400 text-sm">
-                                        💡 <strong>개선 제안:</strong> "만약 ~했다면?" 형태의 가정 질문도 좋습니다.
-                                    </div>
-                                `;
-                            } else {
-                                feedback = `
-                                    <div class="text-orange-400 font-bold mb-2">⚠️ 발산적 질문을 개선해보세요</div>
-                                    <div class="text-gray-300 text-sm mb-3">
-                                        ${!hasQuestionMark ? '• 질문 형태로 작성해주세요<br>' : ''}
-                                        • 원인과 결과, 가정 상황을 생각해보는 질문이 좋습니다.<br>
-                                        • "왜 그랬을까요?" "만약 ~했다면?" 형태를 활용해보세요.
-                                    </div>
-                                    <div class="text-blue-400 text-sm">
-                                        💡 <strong>예시:</strong> "주인공이 다른 선택을 했다면 결과가 어떻게 달라졌을까요?"
-                                    </div>
-                                `;
-                            }
-                        } else if (questionType === 'creative') {
-                            if (hasQuestionMark && questionLength > 15) {
-                                feedback = `
-                                    <div class="text-green-400 font-bold mb-2">✅ 창의적인 질문입니다!</div>
-                                    <div class="text-gray-300 text-sm mb-3">
-                                        • 지문을 넘어 새로운 아이디어를 탐구하는 질문이네요.<br>
-                                        • 개인적 경험과 창의적 사고를 요구하는 좋은 질문입니다.
-                                    </div>
-                                    <div class="text-yellow-400 text-sm">
-                                        💡 <strong>개선 제안:</strong> 자신만의 경험이나 상상력을 더 포함해보세요.
-                                    </div>
-                                `;
-                            } else {
-                                feedback = `
-                                    <div class="text-orange-400 font-bold mb-2">⚠️ 창의적 질문을 개선해보세요</div>
-                                    <div class="text-gray-300 text-sm mb-3">
-                                        ${!hasQuestionMark ? '• 질문 형태로 작성해주세요<br>' : ''}
-                                        • 지문 내용을 넘어 창의적으로 확장하는 질문이 좋습니다.<br>
-                                        • 자신의 경험이나 상상력을 활용해보세요.
-                                    </div>
-                                    <div class="text-blue-400 text-sm">
-                                        💡 <strong>예시:</strong> "이 이야기의 후속편을 내가 쓴다면 어떤 내용을 담고 싶나요?"
-                                    </div>
-                                `;
-                            }
-                        }
-                        
-                        container.innerHTML = feedback;
-                        button.nextElementSibling.nextElementSibling.classList.remove('hidden');
-                    }, 1500);
-                }
-            };
-
-            handleAuthentication();
-        }
-
-        initializeFirebase();
-    </script>
-
-</body>
-</html><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 질문 튜터</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -609,6 +61,19 @@ function closeTeacherDashboard() {
             border-radius: 10px;
             border: 2px solid #1f2937;
         }
+        .gauge-circle-bg {
+            fill: none;
+            stroke: #374151;
+            stroke-width: 3.8;
+        }
+        .gauge-circle-value {
+            fill: none;
+            stroke-width: 3.8;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 1s ease-in-out;
+        }
         .loading-spinner {
             border: 3px solid #374151;
             border-top: 3px solid #39FF14;
@@ -620,23 +85,6 @@ function closeTeacherDashboard() {
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
-        }
-        .sortable-ghost {
-            background-color: #374151 !important;
-            opacity: 0.5;
-        }
-        .sortable-chosen {
-            background-color: #1f2937 !important;
-        }
-        .drag-handle {
-            cursor: grab;
-            color: #6b7280;
-        }
-        .drag-handle:hover {
-            color: #9ca3af;
-        }
-        .drag-handle:active {
-            cursor: grabbing;
         }
     </style>
 </head>
@@ -725,7 +173,7 @@ function closeTeacherDashboard() {
                     <button id="save-doc-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">저장하기</button>
                 </div>
                 <div class="w-1/2 flex flex-col">
-                    <h3 class="text-xl font-bold mb-4">지문 목록 <span class="text-sm font-normal text-gray-400">(드래그하여 순서 변경)</span></h3>
+                    <h3 class="text-xl font-bold mb-4">지문 목록</h3>
                     <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4"></div>
                 </div>
             </div>
@@ -736,7 +184,7 @@ function closeTeacherDashboard() {
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { getAuth, signInAnonymously, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         let app, db, auth;
@@ -768,6 +216,7 @@ function closeTeacherDashboard() {
             let authInitialized = false;
             const TEACHER_SECRET_CODE = '0822';
 
+            const typeTranslations = { factual: '사실성', divergent: '발산성', creative: '창의성' };
             const getCompletionStatus = () => JSON.parse(localStorage.getItem('aiTutorCompletion') || '{}');
             const setCompletionStatus = (docId) => {
                 const status = getCompletionStatus();
@@ -791,41 +240,18 @@ function closeTeacherDashboard() {
                 const listEl = document.getElementById('document-list');
                 const noDocsEl = document.getElementById('no-documents');
                 listEl.innerHTML = '';
-                
-                if (documents.length === 0) {
+                if (documents.length === 0 && !listEl.querySelector('.col-span-full')) {
                     noDocsEl.classList.remove('hidden');
                 } else {
                     noDocsEl.classList.add('hidden');
                     documents.forEach((doc, index) => {
                         const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
                         const isCompleted = getCompletionStatus()[doc.id] || false;
-                        const checkIcon = isCompleted ? 
-                            `<svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>` : '';
-                        
-                        // 교사 정보 표시 (학생 모드일 때만)
-                        const teacherInfo = !isTeacher && doc.teacherName ? 
-                            `<div class="text-xs text-gray-500 mb-2">👨‍🏫 ${doc.teacherName}</div>` : '';
-                        
+                        const checkIcon = isCompleted ? `<svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>` : '';
                         const card = document.createElement('div');
                         card.className = 'bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect';
                         card.addEventListener('click', () => openModal(index));
-                        card.innerHTML = `
-                            <div class="flex justify-between items-start mb-4">
-                                <div class="flex items-center flex-grow">
-                                    <h2 class="text-2xl font-bold mr-2">${doc.title}</h2>
-                                    ${checkIcon}
-                                </div>
-                                <div class="icon-container text-4xl text-green-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                </div>
-                            </div>
-                            ${teacherInfo}
-                            <div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm">
-                                <p>${preview}</p>
-                            </div>
-                        `;
+                        card.innerHTML = `<div class="flex justify-between items-start mb-4"><div class="flex items-center"><h2 class="text-2xl font-bold">${doc.title}</h2>${checkIcon}</div><div class="icon-container text-4xl text-green-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div></div><div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm"><p>${preview}</p></div>`;
                         listEl.appendChild(card);
                     });
                 }
@@ -847,18 +273,9 @@ function closeTeacherDashboard() {
                     item.className = 'slider-item flex flex-col h-full p-1';
                     item.dataset.type = step.type;
                     let nextButtonHtml = (index < steps.length - 1)
-                        ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="window.appFunctions.nextStep()">다음 단계로</button>`
-                        : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="window.appFunctions.completeAndCloseModal()">학습 완료</button>`;
-                    item.innerHTML = `
-                        <div class="flex-grow flex flex-col">
-                            <h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4>
-                            <p class="text-sm text-gray-400 mb-4">${step.description}</p>
-                            <textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea>
-                            <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="window.appFunctions.getFeedback(this)">AI 피드백 받기</button>
-                            <div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div>
-                        </div>
-                        <div class="flex-shrink-0">${nextButtonHtml}</div>
-                    `;
+                        ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
+                        : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
+                    item.innerHTML = `<div class="flex-grow flex flex-col"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button><div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0">${nextButtonHtml}</div>`;
                     sliderContainer.appendChild(item);
                 });
                 sliderWrapper.appendChild(sliderContainer);
@@ -920,6 +337,7 @@ function closeTeacherDashboard() {
                     showAuthLoading();
                     closeTeacherCodeModal();
                     
+                    // 교사 로그인 시도 플래그 설정 (더 구체적인 정보 저장)
                     localStorage.setItem('teacherLoginAttempt', JSON.stringify({
                         timestamp: Date.now(),
                         code: inputCode
@@ -929,22 +347,28 @@ function closeTeacherDashboard() {
                     provider.addScope('profile');
                     provider.addScope('email');
                     
+                    // 현재 사용자 상태와 관계없이 새로운 Google 로그인 시작
                     console.log("🚀 Google 로그인 시작...");
                     
+                    // 먼저 현재 사용자를 로그아웃 (익명 포함)
                     if (auth.currentUser) {
                         console.log("👤 기존 사용자 로그아웃:", auth.currentUser.isAnonymous ? '익명' : auth.currentUser.email);
                         await signOut(auth);
+                        // 로그아웃 완료 대기
                         await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                     
-                    // signInWithPopup 우선 시도
+                    // signInWithRedirect 대신 signInWithPopup 시도
+                    console.log("🖱️ Google 팝업 로그인 시도...");
                     try {
-                        console.log("🖱️ Google 팝업 로그인 시도...");
                         const result = await signInWithPopup(auth, provider);
                         console.log("✅ 팝업 로그인 성공:", result.user.email);
                         
+                        // 교사 등록
                         await registerTeacherInFirestore(result.user);
                         localStorage.setItem('justRegisteredAsTeacher', 'true');
+                        
+                        // UI는 onAuthStateChanged에서 업데이트됨
                         
                     } catch (popupError) {
                         console.log("❌ 팝업 실패, 리디렉션으로 전환:", popupError.code);
@@ -965,8 +389,9 @@ function closeTeacherDashboard() {
                     hideAuthLoading();
                     document.getElementById('teacher-login-btn').style.display = 'block';
                     
+                    let errorMessage = '로그인 중 오류가 발생했습니다: ' + error.message;
                     openTeacherCodeModal();
-                    document.getElementById('teacher-code-error').innerText = '로그인 중 오류가 발생했습니다: ' + error.message;
+                    document.getElementById('teacher-code-error').innerText = errorMessage;
                 }
             };
 
@@ -985,6 +410,7 @@ function closeTeacherDashboard() {
                     await setDoc(teacherDocRef, teacherData);
                     console.log("✅ 교사 등록 완료:", user.email);
                     
+                    // 등록 확인
                     const checkDoc = await getDoc(teacherDocRef);
                     console.log(`🔍 등록 확인:`, checkDoc.exists(), checkDoc.data());
                     
@@ -1032,12 +458,11 @@ function closeTeacherDashboard() {
             }
 
             function handleTeacherLogout() {
-                if (confirm('로그아웃하시겠습니까? 학생 모드로 전환됩니다.')) {
-                    signOut(auth).then(() => {
-                        console.log("로그아웃 완료");
-                        signInAnonymously(auth);
-                    }).catch(console.error);
-                }
+                signOut(auth).then(() => {
+                    console.log("로그아웃 완료");
+                    // 로그아웃 후 익명 로그인
+                    signInAnonymously(auth);
+                }).catch(console.error);
             }
 
             function openTeacherDashboard() {
@@ -1048,4 +473,367 @@ function closeTeacherDashboard() {
                 resetForm();
             }
 
-            function closeTeacherDashboard() {
+            function closeTeacherDashboard() { 
+                document.getElementById('teacher-dashboard-modal').classList.add('hidden');
+                document.getElementById('teacher-dashboard-modal').classList.remove('flex');
+            }
+
+            function renderManageList() {
+                const listEl = document.getElementById('manage-doc-list');
+                listEl.innerHTML = '';
+                window.documents.forEach((doc) => {
+                    const item = document.createElement('div');
+                    item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
+                    item.innerHTML = `<span class="truncate">${doc.title}</span><div class="flex-shrink-0"><button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button><button class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button></div>`;
+                    item.querySelector('.bg-blue-600').onclick = () => editDocument(doc.id);
+                    item.querySelector('.bg-red-600').onclick = () => deleteDocument(doc.id, doc.title);
+                    listEl.appendChild(item);
+                });
+            }
+
+            async function handleSaveDocument() {
+                const title = document.getElementById('new-doc-title').value.trim();
+                const passage = document.getElementById('new-doc-passage').value.trim();
+                const docId = document.getElementById('edit-doc-id').value;
+                
+                if (!auth.currentUser || auth.currentUser.isAnonymous || !title || !passage) {
+                    alert('제목과 내용을 모두 입력해주세요.');
+                    return;
+                }
+                
+                const userId = auth.currentUser.uid;
+                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                const data = { 
+                    title, 
+                    passage, 
+                    createdAt: serverTimestamp(), 
+                    author: userId,
+                    authorName: auth.currentUser.displayName || auth.currentUser.email
+                };
+                
+                try {
+                    if (docId) {
+                        await updateDoc(doc(db, passagesColPath, docId), { title, passage, updatedAt: serverTimestamp() });
+                        console.log("지문 수정 완료:", title);
+                    } else {
+                        await addDoc(collection(db, passagesColPath), data);
+                        console.log("지문 추가 완료:", title);
+                    }
+                    resetForm();
+                } catch (error) {
+                    console.error("지문 저장 오류:", error);
+                    alert('지문 저장에 실패했습니다. 다시 시도해주세요.');
+                }
+            }
+
+            function editDocument(docId) {
+                const docData = window.documents.find(d => d.id === docId);
+                if(docData) {
+                    document.getElementById('form-title').innerText = '지문 수정';
+                    document.getElementById('new-doc-title').value = docData.title;
+                    document.getElementById('new-doc-passage').value = docData.passage;
+                    document.getElementById('edit-doc-id').value = docData.id;
+                }
+            }
+
+            async function deleteDocument(docId, title) {
+                if (!confirm(`"${title}" 지문을 삭제하시겠습니까?`)) return;
+                
+                try {
+                    const userId = auth.currentUser.uid;
+                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                    await deleteDoc(doc(db, passagesColPath, docId));
+                    console.log("지문 삭제 완료:", title);
+                } catch (error) {
+                    console.error("지문 삭제 오류:", error);
+                    alert('지문 삭제에 실패했습니다.');
+                }
+            }
+
+            function resetForm() {
+                document.getElementById('form-title').innerText = '새 지문 추가';
+                document.getElementById('new-doc-title').value = '';
+                document.getElementById('new-doc-passage').value = '';
+                document.getElementById('edit-doc-id').value = '';
+            }
+            
+            function goToStep(step) {
+                currentStep = step;
+                const slider = document.getElementById('slider-container');
+                if (slider) slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
+                document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
+                clearHighlights();
+            }
+            
+            function clearHighlights() {
+                const passageEl = document.getElementById('modal-passage');
+                if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
+                    passageEl.innerText = window.documents[currentDocIndex].passage;
+                }
+            }
+            
+            // 인증 핸들링 로직 수정
+            async function handleAuthentication() {
+                // 이벤트 리스너 등록
+                document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
+                document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
+                document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
+                document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
+                document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
+                document.getElementById('close-modal-btn').addEventListener('click', closeModal);
+                document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
+                document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
+
+                // Enter 키 이벤트
+                document.getElementById('teacher-code-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        verifyTeacherCodeAndLogin();
+                    }
+                });
+
+                console.log("인증 시스템 초기화 시작...");
+
+                // 페이지 로드 시 리디렉션 결과 먼저 확인
+                let redirectHandled = false;
+                
+                try {
+                    console.log("리디렉션 결과 확인 중...");
+                    const result = await getRedirectResult(auth);
+                    
+                    if (result && result.user) {
+                        const user = result.user;
+                        console.log("🎉 리디렉션 결과 감지! 사용자:", user.displayName, user.email);
+                        redirectHandled = true;
+                        
+                        // 교사 로그인 시도였는지 확인
+                        const wasTeacherLogin = localStorage.getItem('teacherLoginAttempt');
+                        console.log("교사 로그인 시도 플래그:", wasTeacherLogin);
+                        
+                        if (wasTeacherLogin) {
+                            console.log("✅ 교사 로그인 시도 확인, 교사 등록 진행...");
+                            localStorage.removeItem('teacherLoginAttempt');
+                            
+                            try {
+                                await registerTeacherInFirestore(user);
+                                console.log("✅ 교사 Firestore 등록 완료");
+                                
+                                // 교사 등록 완료 플래그 설정
+                                localStorage.setItem('teacherRegistered', 'true');
+                                
+                            } catch (registerError) {
+                                console.error("❌ 교사 등록 실패:", registerError);
+                            }
+                        }
+                        
+                        // onAuthStateChanged는 자동으로 호출될 것임
+                    } else {
+                        console.log("리디렉션 결과 없음");
+                    }
+                } catch (error) {
+                    console.error("❌ 리디렉션 결과 처리 오류:", error);
+                    localStorage.removeItem('teacherLoginAttempt');
+                    hideAuthLoading();
+                    
+                    // 구체적인 오류 처리
+                    if (error.code === 'auth/account-exists-with-different-credential') {
+                        openTeacherCodeModal();
+                        document.getElementById('teacher-code-error').innerText = 
+                            '이미 다른 방법으로 가입된 계정입니다. 다른 계정을 사용해주세요.';
+                    } else {
+                        openTeacherCodeModal();
+                        document.getElementById('teacher-code-error').innerText = 
+                            `로그인 오류: ${error.message}`;
+                    }
+                }
+
+                // 인증 상태 변경 리스너
+                onAuthStateChanged(auth, async (user) => {
+                    const userInfo = user ? 
+                        (user.isAnonymous ? "익명" : `${user.displayName || '이름없음'} (${user.email})`) 
+                        : "없음";
+                    console.log(`🔄 인증 상태 변경: ${userInfo}`);
+                    
+                    if (user && !user.isAnonymous) {
+                        // Google 사용자 로그인됨
+                        console.log("📱 Google 사용자 처리 시작...");
+                        
+                        try {
+                            // 교사 등록이 완료되었는지 확인
+                            const wasJustRegistered = localStorage.getItem('teacherRegistered');
+                            if (wasJustRegistered) {
+                                localStorage.removeItem('teacherRegistered');
+                                console.log("⏱️ 교사 등록 직후, 3초 대기...");
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                            } else {
+                                console.log("⏱️ 교사 상태 확인을 위해 1초 대기...");
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                            
+                            const isTeacherStatus = await checkIfTeacher(user.uid);
+                            console.log(`👨‍🏫 교사 상태 확인 결과: ${isTeacherStatus}`);
+                            
+                            updateLoginUI(user, isTeacherStatus);
+                            
+                            if (isTeacherStatus) {
+                                console.log("🎓 교사 모드로 데이터 로딩...");
+                                await loadTeacherData(user.uid);
+                            } else {
+                                console.log("👨‍🎓 교사가 아님, 학생 데이터 로딩...");
+                                await loadStudentData();
+                            }
+                            
+                        } catch (error) {
+                            console.error("❌ Google 사용자 처리 오류:", error);
+                            updateLoginUI(null, false);
+                            await loadStudentData();
+                        }
+                        
+                        authInitialized = true;
+                        
+                    } else if (user && user.isAnonymous) {
+                        // 익명 사용자
+                        console.log("👤 익명 사용자 모드");
+                        updateLoginUI(null, false);
+                        await loadStudentData();
+                        authInitialized = true;
+                        
+                    } else if (!user) {
+                        // 사용자 없음
+                        console.log("❌ 사용자 없음");
+                        if (!authInitialized && !redirectHandled) {
+                            console.log("🔄 익명 로그인 시도...");
+                            try {
+                                await signInAnonymously(auth);
+                            } catch (anonError) {
+                                console.error("❌ 익명 로그인 실패:", anonError);
+                                updateLoginUI(null, false);
+                                authInitialized = true;
+                            }
+                        }
+                    }
+                });
+                
+                // 추가 디버깅: 5초 후 현재 상태 로그
+                setTimeout(() => {
+                    const currentUser = auth.currentUser;
+                    console.log("🕐 5초 후 현재 상태:", {
+                        user: currentUser ? (currentUser.isAnonymous ? '익명' : currentUser.email) : '없음',
+                        initialized: authInitialized,
+                        isTeacher: isTeacher
+                    });
+                }, 5000);
+            }
+
+            function loadTeacherData(uid) {
+                console.log("교사 데이터 로딩 시작:", uid);
+                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
+                
+                return new Promise((resolve) => {
+                    onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
+                        documents = snapshot.docs.map(doc => ({ 
+                            id: doc.id, 
+                            ...doc.data() 
+                        }));
+                        console.log(`교사 지문 ${documents.length}개 로드됨`);
+                        renderDocumentCards();
+                        
+                        if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
+                            renderManageList();
+                        }
+                        resolve();
+                    }, (error) => {
+                        console.error("교사 데이터 로딩 오류:", error);
+                        resolve();
+                    });
+                });
+            }
+
+            async function loadStudentData() {
+                console.log("학생 데이터 로딩 시작");
+                try {
+                    // 모든 교사의 지문 수집
+                    const teachersRef = collection(db, `artifacts/${appId}/public/data/teachers`);
+                    const teacherSnapshot = await getDocs(teachersRef);
+                    
+                    let allPassages = [];
+                    const promises = [];
+                    
+                    teacherSnapshot.forEach((teacherDoc) => {
+                        const userId = teacherDoc.id;
+                        const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                        
+                        promises.push(
+                            getDocs(collection(db, passagesColPath)).then(passageSnapshot => {
+                                passageSnapshot.forEach(doc => {
+                                    allPassages.push({ 
+                                        id: doc.id, 
+                                        ...doc.data(),
+                                        teacherId: userId
+                                    });
+                                });
+                            })
+                        );
+                    });
+                    
+                    await Promise.all(promises);
+                    
+                    documents = allPassages.sort((a, b) => {
+                        // 최신 순으로 정렬
+                        const aTime = a.createdAt?.toDate?.() || new Date(0);
+                        const bTime = b.createdAt?.toDate?.() || new Date(0);
+                        return bTime - aTime;
+                    });
+                    
+                    console.log(`총 ${documents.length}개의 지문 로드됨`);
+                    renderDocumentCards();
+                    
+                } catch (error) {
+                    console.error("학생 데이터 로딩 오류:", error);
+                    const listEl = document.getElementById('document-list');
+                    listEl.innerHTML = `
+                        <div class="col-span-full text-center text-red-400 bg-red-900/20 p-8 rounded-2xl">
+                            <h3 class="text-2xl font-bold mb-4">데이터 로딩 실패</h3>
+                            <p>지문 목록을 불러올 수 없습니다.</p>
+                            <p class="mt-2 text-sm text-gray-400">네트워크 연결을 확인하거나 나중에 다시 시도해주세요.</p>
+                            <button onclick="location.reload()" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
+                                새로고침
+                            </button>
+                        </div>
+                    `;
+                }
+            }
+
+            // 전역 함수 등록 (HTML에서 호출용)
+            window.app = {
+                nextStep: () => {
+                    if (currentStep < 3) {
+                        goToStep(currentStep + 1);
+                    }
+                },
+                completeAndCloseModal,
+                getFeedback: (button) => {
+                    // AI 피드백 기능 (구현 필요시)
+                    const container = button.parentElement.querySelector('.feedback-container');
+                    const textarea = button.parentElement.querySelector('textarea');
+                    const question = textarea.value.trim();
+                    
+                    if (!question) {
+                        alert('질문을 입력해주세요.');
+                        return;
+                    }
+                    
+                    container.innerHTML = '<p class="text-green-400">피드백 기능은 아직 구현되지 않았습니다.</p>';
+                    container.classList.remove('hidden');
+                    button.nextElementSibling.nextElementSibling.classList.remove('hidden');
+                }
+            };
+
+            // 인증 시스템 시작
+            handleAuthentication();
+        }
+
+        initializeFirebase();
+    </script>
+
+</body>
+</html>
