@@ -275,18 +275,7 @@
                     let nextButtonHtml = (index < steps.length - 1)
                         ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
                         : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
-                    
-                    // 스크롤 기능이 추가된 피드백 컨테이너
-                    item.innerHTML = `
-                        <div class="flex-grow flex flex-col">
-                            <h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4>
-                            <p class="text-sm text-gray-400 mb-4">${step.description}</p>
-                            <textarea class="w-full h-32 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea>
-                            <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button>
-                            <div class="feedback-container hidden mt-4 max-h-80 overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div>
-                        </div>
-                        <div class="flex-shrink-0">${nextButtonHtml}</div>
-                    `;
+                    item.innerHTML = `<div class="flex-grow flex flex-col overflow-hidden"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button><div class="feedback-container hidden mt-4 flex-grow min-h-0 overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0">${nextButtonHtml}</div>`;
                     sliderContainer.appendChild(item);
                 });
                 sliderWrapper.appendChild(sliderContainer);
@@ -491,3 +480,605 @@
                 listEl.innerHTML = '';
                 
                 if (window.documents.length === 0) {
+                    listEl.innerHTML = '<div class="text-gray-400 text-center py-8">저장된 지문이 없습니다.</div>';
+                    return;
+                }
+                
+                window.documents.forEach((doc) => {
+                    const item = document.createElement('div');
+                    item.className = 'bg-gray-700 p-4 rounded-lg mb-3 hover:bg-gray-600 transition-colors';
+                    
+                    // 생성일 표시
+                    const createdDate = doc.createdAt?.toDate ? 
+                        new Date(doc.createdAt.toDate()).toLocaleDateString('ko-KR') : 
+                        '날짜 없음';
+                    
+                    item.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div class="flex-grow mr-4">
+                                <h4 class="font-bold text-white mb-1 truncate">${doc.title}</h4>
+                                <p class="text-sm text-gray-400 mb-2">${createdDate}</p>
+                                <p class="text-xs text-gray-500 line-clamp-2">${doc.passage.substring(0, 100)}...</p>
+                            </div>
+                            <div class="flex-shrink-0 flex gap-2">
+                                <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded text-sm transition-colors">
+                                    수정
+                                </button>
+                                <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded text-sm transition-colors">
+                                    삭제
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // 이벤트 리스너 추가
+                    item.querySelector('.edit-btn').onclick = () => editDocument(doc.id);
+                    item.querySelector('.delete-btn').onclick = () => deleteDocument(doc.id, doc.title);
+                    
+                    listEl.appendChild(item);
+                });
+                
+                console.log(`지문 목록 렌더링 완료: ${window.documents.length}개`);
+            }
+
+            async function handleSaveDocument() {
+                const title = document.getElementById('new-doc-title').value.trim();
+                const passage = document.getElementById('new-doc-passage').value.trim();
+                const docId = document.getElementById('edit-doc-id').value;
+                
+                if (!auth.currentUser || auth.currentUser.isAnonymous || !title || !passage) {
+                    alert('제목과 내용을 모두 입력해주세요.');
+                    return;
+                }
+                
+                const userId = auth.currentUser.uid;
+                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                const data = { 
+                    title, 
+                    passage, 
+                    createdAt: serverTimestamp(), 
+                    author: userId,
+                    authorName: auth.currentUser.displayName || auth.currentUser.email
+                };
+                
+                try {
+                    if (docId) {
+                        await updateDoc(doc(db, passagesColPath, docId), { 
+                            title, 
+                            passage, 
+                            updatedAt: serverTimestamp() 
+                        });
+                        console.log("지문 수정 완료:", title);
+                    } else {
+                        await addDoc(collection(db, passagesColPath), data);
+                        console.log("지문 추가 완료:", title);
+                    }
+                    
+                    resetForm();
+                    console.log('지문 저장 완료, Firebase 리스너가 자동으로 목록을 업데이트할 예정');
+                    
+                } catch (error) {
+                    console.error("지문 저장 오류:", error);
+                    alert('지문 저장에 실패했습니다. 다시 시도해주세요.');
+                }
+            }
+
+            function editDocument(docId) {
+                const docData = window.documents.find(d => d.id === docId);
+                if(docData) {
+                    document.getElementById('form-title').innerText = '지문 수정';
+                    document.getElementById('new-doc-title').value = docData.title;
+                    document.getElementById('new-doc-passage').value = docData.passage;
+                    document.getElementById('edit-doc-id').value = docData.id;
+                }
+            }
+
+            async function deleteDocument(docId, title) {
+                if (!confirm(`"${title}" 지문을 삭제하시겠습니까?`)) return;
+                
+                try {
+                    const userId = auth.currentUser.uid;
+                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                    await deleteDoc(doc(db, passagesColPath, docId));
+                    console.log("지문 삭제 완료:", title, "Firebase 리스너가 자동으로 목록을 업데이트할 예정");
+                } catch (error) {
+                    console.error("지문 삭제 오류:", error);
+                    alert('지문 삭제에 실패했습니다.');
+                }
+            }
+
+            function resetForm() {
+                document.getElementById('form-title').innerText = '새 지문 추가';
+                document.getElementById('new-doc-title').value = '';
+                document.getElementById('new-doc-passage').value = '';
+                document.getElementById('edit-doc-id').value = '';
+            }
+            
+            function goToStep(step) {
+                currentStep = step;
+                const slider = document.getElementById('slider-container');
+                if (slider) slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
+                document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
+                clearHighlights();
+            }
+            
+            function clearHighlights() {
+                const passageEl = document.getElementById('modal-passage');
+                if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
+                    passageEl.innerText = window.documents[currentDocIndex].passage;
+                }
+            }
+
+            function loadTeacherData(uid) {
+                console.log("교사 데이터 로딩 시작:", uid);
+                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
+                
+                return new Promise((resolve) => {
+                    // 실시간 리스너 설정
+                    onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
+                        documents = snapshot.docs.map(doc => ({ 
+                            id: doc.id, 
+                            ...doc.data() 
+                        }));
+                        
+                        // 글로벌 documents 배열 업데이트
+                        window.documents = documents;
+                        
+                        console.log(`교사 지문 ${documents.length}개 로드됨`);
+                        
+                        // 메인 페이지 카드 렌더링
+                        renderDocumentCards();
+                        
+                        // 대시보드가 열려있다면 관리 목록도 업데이트
+                        if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
+                            console.log('대시보드가 열려있어서 관리 목록도 업데이트');
+                            renderManageList();
+                        }
+                        resolve();
+                    }, (error) => {
+                        console.error("교사 데이터 로딩 오류:", error);
+                        resolve();
+                    });
+                });
+            }
+
+            async function loadStudentData() {
+                console.log("학생 데이터 로딩 시작");
+                try {
+                    const teachersRef = collection(db, `artifacts/${appId}/public/data/teachers`);
+                    const teacherSnapshot = await getDocs(teachersRef);
+                    
+                    let allPassages = [];
+                    const promises = [];
+                    
+                    teacherSnapshot.forEach((teacherDoc) => {
+                        const userId = teacherDoc.id;
+                        const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                        
+                        promises.push(
+                            getDocs(collection(db, passagesColPath)).then(passageSnapshot => {
+                                passageSnapshot.forEach(doc => {
+                                    allPassages.push({ 
+                                        id: doc.id, 
+                                        ...doc.data(),
+                                        teacherId: userId
+                                    });
+                                });
+                            })
+                        );
+                    });
+                    
+                    await Promise.all(promises);
+                    
+                    documents = allPassages.sort((a, b) => {
+                        const aTime = a.createdAt?.toDate?.() || new Date(0);
+                        const bTime = b.createdAt?.toDate?.() || new Date(0);
+                        return bTime - aTime;
+                    });
+                    
+                    console.log(`총 ${documents.length}개의 지문 로드됨`);
+                    renderDocumentCards();
+                    
+                } catch (error) {
+                    console.error("학생 데이터 로딩 오류:", error);
+                    const listEl = document.getElementById('document-list');
+                    listEl.innerHTML = `
+                        <div class="col-span-full text-center text-red-400 bg-red-900/20 p-8 rounded-2xl">
+                            <h3 class="text-2xl font-bold mb-4">데이터 로딩 실패</h3>
+                            <p>지문 목록을 불러올 수 없습니다.</p>
+                            <p class="mt-2 text-sm text-gray-400">네트워크 연결을 확인하거나 나중에 다시 시도해주세요.</p>
+                            <button onclick="location.reload()" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
+                                새로고침
+                            </button>
+                        </div>
+                    `;
+                }
+            }
+
+            async function handleAuthentication() {
+                document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
+                document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
+                document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
+                document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
+                document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
+                document.getElementById('close-modal-btn').addEventListener('click', closeModal);
+                document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
+                document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
+
+                document.getElementById('teacher-code-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        verifyTeacherCodeAndLogin();
+                    }
+                });
+
+                console.log("🚀 인증 시스템 초기화 시작...");
+
+                const teacherAttempt = localStorage.getItem('teacherLoginAttempt');
+                if (teacherAttempt) {
+                    console.log("📋 교사 로그인 시도 감지:", teacherAttempt);
+                    showAuthLoading();
+                }
+
+                let redirectUser = null;
+                try {
+                    console.log("🔍 리디렉션 결과 확인 중...");
+                    const result = await getRedirectResult(auth);
+                    
+                    if (result && result.user) {
+                        redirectUser = result.user;
+                        console.log("🎉 리디렉션 성공! 사용자:", redirectUser.displayName, redirectUser.email);
+                        
+                        const teacherAttemptData = localStorage.getItem('teacherLoginAttempt');
+                        
+                        if (teacherAttemptData) {
+                            console.log("✅ 교사 로그인 시도 확인됨, 교사 등록 진행...");
+                            localStorage.removeItem('teacherLoginAttempt');
+                            
+                            try {
+                                await registerTeacherInFirestore(redirectUser);
+                                console.log("✅ 교사 등록 완료!");
+                                localStorage.setItem('justRegisteredAsTeacher', 'true');
+                            } catch (registerError) {
+                                console.error("❌ 교사 등록 실패:", registerError);
+                            }
+                        } else {
+                            console.log("ℹ️ 일반 Google 로그인");
+                        }
+                    } else {
+                        console.log("ℹ️ 리디렉션 결과 없음 (정상)");
+                    }
+                } catch (redirectError) {
+                    console.error("❌ 리디렉션 오류:", redirectError);
+                    localStorage.removeItem('teacherLoginAttempt');
+                    hideAuthLoading();
+                    
+                    setTimeout(() => {
+                        openTeacherCodeModal();
+                        document.getElementById('teacher-code-error').innerText = `로그인 오류: ${redirectError.message}`;
+                    }, 1000);
+                }
+
+                onAuthStateChanged(auth, async (user) => {
+                    const userInfo = user ? 
+                        (user.isAnonymous ? "익명 사용자" : `${user.displayName || '이름없음'} (${user.email})`) 
+                        : "사용자 없음";
+                    console.log(`🔄 인증 상태 변경: ${userInfo}`);
+                    
+                    if (user && !user.isAnonymous) {
+                        console.log("✅ Google 사용자 인증됨:", user.displayName, user.email);
+                        hideAuthLoading();
+                        
+                        try {
+                            const justRegistered = localStorage.getItem('justRegisteredAsTeacher');
+                            if (justRegistered) {
+                                localStorage.removeItem('justRegisteredAsTeacher');
+                                console.log("⏰ 교사 등록 직후, 5초 대기 중...");
+                                await new Promise(resolve => setTimeout(resolve, 5000));
+                            } else {
+                                console.log("⏰ 일반 교사 상태 확인, 2초 대기 중...");
+                                await new Promise(resolve => setTimeout(resolve, 2000));
+                            }
+                            
+                            const isTeacherStatus = await checkIfTeacher(user.uid);
+                            console.log(`👨‍🏫 최종 교사 상태: ${isTeacherStatus}`);
+                            
+                            updateLoginUI(user, isTeacherStatus);
+                            
+                            if (isTeacherStatus) {
+                                console.log("📚 교사 데이터 로딩...");
+                                await loadTeacherData(user.uid);
+                            } else {
+                                console.log("📖 학생 데이터 로딩...");
+                                await loadStudentData();
+                            }
+                            
+                        } catch (error) {
+                            console.error("❌ Google 사용자 처리 중 오류:", error);
+                            updateLoginUI(null, false);
+                            await loadStudentData();
+                        }
+                        
+                        authInitialized = true;
+                        
+                    } else if (user && user.isAnonymous) {
+                        console.log("👤 익명 사용자 처리");
+                        hideAuthLoading();
+                        updateLoginUI(null, false);
+                        
+                        if (!authInitialized) {
+                            await loadStudentData();
+                            authInitialized = true;
+                        }
+                        
+                    } else {
+                        console.log("❌ 사용자 없음, 익명 로그인 시도");
+                        
+                        if (!authInitialized && !redirectUser) {
+                            try {
+                                await signInAnonymously(auth);
+                            } catch (anonError) {
+                                console.error("❌ 익명 로그인 실패:", anonError);
+                                hideAuthLoading();
+                                updateLoginUI(null, false);
+                                authInitialized = true;
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 전역 함수 등록 (HTML에서 호출용)
+            window.app = {
+                nextStep: () => {
+                    if (currentStep < 3) {
+                        goToStep(currentStep + 1);
+                    }
+                },
+                completeAndCloseModal,
+                getFeedback: async (button) => {
+                    const container = button.parentElement.querySelector('.feedback-container');
+                    const textarea = button.parentElement.querySelector('textarea');
+                    const question = textarea.value.trim();
+                    
+                    if (!question) {
+                        alert('질문을 입력해주세요.');
+                        return;
+                    }
+                    
+                    // 현재 단계 확인
+                    const currentSlider = document.querySelector('.slider-item:nth-child(' + currentStep + ')');
+                    const questionType = currentSlider.dataset.type;
+                    const questionTypeKorean = {
+                        'factual': '사실적',
+                        'divergent': '발산적', 
+                        'creative': '창의적'
+                    }[questionType];
+                    
+                    // 로딩 상태 표시
+                    container.innerHTML = `
+                        <div class="flex items-center justify-center py-8">
+                            <div class="loading-spinner mr-3"></div>
+                            <span class="text-blue-400">AI가 질문을 분석하고 있습니다...</span>
+                        </div>
+                    `;
+                    container.classList.remove('hidden');
+                    button.disabled = true;
+                    
+                    try {
+                        const passage = window.documents[currentDocIndex].passage;
+                        const feedback = await getAIFeedback(question, questionType, passage, questionTypeKorean);
+                        
+                        // 질문 입력창의 크기를 고정 높이로 조절합니다.
+                        textarea.classList.remove('flex-grow');
+                        textarea.style.height = '120px';
+                        
+                        // 피드백 UI 렌더링
+                        renderFeedbackUI(container, feedback, button);
+                        
+                    } catch (error) {
+                        console.error('AI 피드백 오류:', error);
+                        container.innerHTML = `
+                            <div class="text-red-400 p-4 rounded bg-red-900/20">
+                                <div class="font-bold mb-2">❌ 피드백 생성 실패</div>
+                                <div class="text-sm">잠시 후 다시 시도해주세요.</div>
+                                <button onclick="this.parentElement.parentElement.classList.add('hidden')" 
+                                        class="mt-3 bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">
+                                    닫기
+                                </button>
+                            </div>
+                        `;
+                        button.disabled = false;
+                    }
+                }
+            };
+
+            async function getAIFeedback(question, questionType, passage, questionTypeKorean) {
+                try {
+                    const response = await fetch('/.netlify/functions/get-feedback', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            passage: passage,
+                            targetType: questionType,
+                            studentQuestion: question
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API 요청 실패: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    console.log('OpenAI API 응답:', result);
+                    
+                    // OpenAI 응답에서 실제 콘텐츠 추출
+                    const feedbackContent = JSON.parse(result.choices[0].message.content);
+                    
+                    // 기존 형식으로 변환
+                    return {
+                        scores: {
+                            factual: feedbackContent.similarity.factual,
+                            divergent: feedbackContent.similarity.divergent,
+                            creative: feedbackContent.similarity.creative
+                        },
+                        feedback: feedbackContent.similarity[questionType] >= 70 ? 
+                            feedbackContent.positive_feedback : 
+                            feedbackContent.improvement_tips.join(' '),
+                        example: feedbackContent.similarity[questionType] >= 70 ? 
+                            feedbackContent.exemplar_questions[0] : null,
+                        rationale: feedbackContent.rationale,
+                        hints: feedbackContent.hints
+                    };
+                    
+                } catch (error) {
+                    console.error('OpenAI API 호출 오류:', error);
+                    throw error;
+                }
+            }
+
+            function renderFeedbackUI(container, feedback, button) {
+                const currentSlider = document.querySelector('.slider-item:nth-child(' + currentStep + ')');
+                const questionType = currentSlider.dataset.type;
+                const currentScore = feedback.scores[questionType];
+                const isPassing = currentScore >= 70;
+                
+                // 게이지 차트 생성
+                const gaugeHTML = createGaugeChart(feedback.scores);
+                
+                // 피드백 UI 구성
+                let feedbackHTML = `
+                    <div class="space-y-4">
+                        <!-- 점수 게이지 -->
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-bold mb-4 text-center">질문 분석 결과</h4>
+                            ${gaugeHTML}
+                        </div>
+                        
+                        <!-- 분석 근거 -->
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-bold mb-2 text-blue-400">📊 분석 근거</h4>
+                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.rationale}</p>
+                        </div>
+                        
+                        <!-- 피드백 내용 -->
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-bold mb-2 ${isPassing ? 'text-green-400' : 'text-orange-400'}">
+                                ${isPassing ? '✅ 좋은 질문입니다!' : '⚠️ 개선이 필요합니다'}
+                            </h4>
+                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.feedback}</p>
+                        </div>
+                `;
+                
+                // 힌트 표시
+                if (feedback.hints && feedback.hints.length > 0) {
+                    feedbackHTML += `
+                        <div class="bg-purple-900/30 p-4 rounded-lg border border-purple-600/30">
+                            <h4 class="text-purple-400 font-bold mb-2">💡 생각해볼 힌트</h4>
+                            <ul class="text-gray-300 text-sm space-y-1">
+                                ${feedback.hints.map(hint => `<li>• ${hint}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                // 질문 예시 (70% 이상일 때만)
+                if (isPassing && feedback.example) {
+                    feedbackHTML += `
+                        <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-600/30">
+                            <h4 class="text-blue-400 font-bold mb-2">🎯 비슷한 질문 예시</h4>
+                            <p class="text-gray-300 text-sm italic">"${feedback.example}"</p>
+                        </div>
+                    `;
+                }
+                
+                feedbackHTML += `</div>`;
+                
+                container.innerHTML = feedbackHTML;
+                
+                // 게이지 애니메이션 시작
+                setTimeout(() => {
+                    animateGauges(feedback.scores);
+                }, 100);
+                
+                // 70% 이상이면 다음 버튼 활성화
+                if (isPassing) {
+                    const nextButton = button.nextElementSibling.nextElementSibling;
+                    if (nextButton) {
+                        nextButton.classList.remove('hidden');
+                        nextButton.classList.remove('text-gray-400');
+                        nextButton.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                    }
+                }
+                
+                button.disabled = false;
+            }
+
+            function createGaugeChart(scores) {
+                return `
+                    <div class="grid grid-cols-3 gap-4 text-center">
+                        ${Object.entries(scores).map(([type, score]) => {
+                            const typeNames = {
+                                'factual': '사실성',
+                                'divergent': '발산성',
+                                'creative': '창의성'
+                            };
+                            const color = score >= 70 ? '#10B981' : score >= 50 ? '#F59E0B' : '#EF4444';
+                            return `
+                                <div class="flex flex-col items-center">
+                                    <div class="relative w-20 h-20 mb-2">
+                                        <svg class="w-20 h-20 transform -rotate-90">
+                                            <circle cx="40" cy="40" r="36" stroke="#374151" stroke-width="4" fill="none"/>
+                                            <circle cx="40" cy="40" r="36" stroke="${color}" stroke-width="4" fill="none"
+                                                    stroke-linecap="round" stroke-dasharray="226" stroke-dashoffset="226"
+                                                    class="gauge-${type}" style="transition: stroke-dashoffset 2s ease-in-out"/>
+                                        </svg>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span class="text-sm font-bold score-${type}">0%</span>
+                                        </div>
+                                    </div>
+                                    <span class="text-xs text-gray-400">${typeNames[type]}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
+            function animateGauges(scores) {
+                Object.entries(scores).forEach(([type, score]) => {
+                    const circle = document.querySelector(`.gauge-${type}`);
+                    const scoreElement = document.querySelector(`.score-${type}`);
+                    
+                    if (circle && scoreElement) {
+                        // 원주 계산 (2πr = 2π×36 = 226)
+                        const circumference = 226;
+                        const offset = circumference - (score / 100) * circumference;
+                        
+                        // 애니메이션
+                        circle.style.strokeDashoffset = offset;
+                        
+                        // 숫자 카운트 애니메이션
+                        let currentScore = 0;
+                        const increment = score / 50; // 2초 동안 50번 업데이트
+                        const timer = setInterval(() => {
+                            currentScore += increment;
+                            if (currentScore >= score) {
+                                currentScore = score;
+                                clearInterval(timer);
+                            }
+                            scoreElement.textContent = Math.round(currentScore) + '%';
+                        }, 40);
+                    }
+                });
+            }
+
+            handleAuthentication();
+        }
+
+        initializeFirebase();
+    </script>
+
+</body>
+</html>
