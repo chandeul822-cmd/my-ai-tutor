@@ -175,6 +175,14 @@
                 <div class="w-1/2 flex flex-col">
                     <h3 class="text-xl font-bold mb-4">지문 목록</h3>
                     <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4"></div>
+                     <div class="mt-6 p-4 bg-gray-900 rounded-lg">
+                        <h4 class="text-lg font-bold mb-2 text-green-400">학생 초대 링크</h4>
+                        <p class="text-sm text-gray-400 mb-3">이 링크를 학생들에게 공유하면 선생님의 지문만 볼 수 있습니다.</p>
+                        <div class="flex gap-2">
+                            <input type="text" id="teacher-share-link" class="w-full p-2 bg-gray-700 rounded-lg text-gray-300" readonly>
+                            <button id="copy-link-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">복사</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -480,6 +488,9 @@
                 document.getElementById('teacher-dashboard-modal').classList.remove('hidden');
                 document.getElementById('teacher-dashboard-modal').classList.add('flex');
                 
+                const shareLink = window.location.href.split('?')[0] + '?teacher=' + auth.currentUser.uid;
+                document.getElementById('teacher-share-link').value = shareLink;
+
                 // 폼 초기화 후 지문 목록 렌더링
                 resetForm();
                 renderManageList();
@@ -658,45 +669,41 @@
             }
 
             async function loadStudentData() {
-                console.log("학생 데이터 로딩 시작");
+                const urlParams = new URLSearchParams(window.location.search);
+                const teacherId = urlParams.get('teacher');
+                const listEl = document.getElementById('document-list');
+                const noDocsEl = document.getElementById('no-documents');
+
+                if (!teacherId) {
+                    listEl.innerHTML = '';
+                    noDocsEl.classList.remove('hidden');
+                    noDocsEl.innerHTML = `
+                        <p class="text-2xl mb-4">학습을 시작할 수 없습니다.</p>
+                        <p>선생님께 받은 전용 링크로 접속해주세요.</p>
+                    `;
+                    return;
+                }
+
+                console.log(`학생 데이터 로딩 시작 (교사 ID: ${teacherId})`);
                 try {
-                    const teachersRef = collection(db, `artifacts/${appId}/public/data/teachers`);
-                    const teacherSnapshot = await getDocs(teachersRef);
-                    
-                    let allPassages = [];
-                    const promises = [];
-                    
-                    teacherSnapshot.forEach((teacherDoc) => {
-                        const userId = teacherDoc.id;
-                        const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                        
-                        promises.push(
-                            getDocs(collection(db, passagesColPath)).then(passageSnapshot => {
-                                passageSnapshot.forEach(doc => {
-                                    allPassages.push({ 
-                                        id: doc.id, 
-                                        ...doc.data(),
-                                        teacherId: userId
-                                    });
-                                });
-                            })
-                        );
-                    });
-                    
-                    await Promise.all(promises);
-                    
-                    documents = allPassages.sort((a, b) => {
+                    const passagesColPath = `artifacts/${appId}/users/${teacherId}/passages`;
+                    const passageSnapshot = await getDocs(collection(db, passagesColPath));
+
+                    documents = passageSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })).sort((a, b) => {
                         const aTime = a.createdAt?.toDate?.() || new Date(0);
                         const bTime = b.createdAt?.toDate?.() || new Date(0);
                         return bTime - aTime;
                     });
-                    
-                    console.log(`총 ${documents.length}개의 지문 로드됨`);
+
+                    window.documents = documents;
+                    console.log(`총 ${documents.length}개의 지문 로드됨 (교사: ${teacherId})`);
                     renderDocumentCards();
-                    
+
                 } catch (error) {
                     console.error("학생 데이터 로딩 오류:", error);
-                    const listEl = document.getElementById('document-list');
                     listEl.innerHTML = `
                         <div class="col-span-full text-center text-red-400 bg-red-900/20 p-8 rounded-2xl">
                             <h3 class="text-2xl font-bold mb-4">데이터 로딩 실패</h3>
@@ -719,6 +726,23 @@
                 document.getElementById('close-modal-btn').addEventListener('click', closeModal);
                 document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
                 document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
+
+                document.getElementById('copy-link-btn').addEventListener('click', (e) => {
+                    const linkInput = document.getElementById('teacher-share-link');
+                    linkInput.select();
+                    linkInput.setSelectionRange(0, 99999); // For mobile devices
+                    
+                    try {
+                        document.execCommand('copy');
+                        e.target.textContent = '복사 완료!';
+                        setTimeout(() => {
+                            e.target.textContent = '복사';
+                        }, 2000);
+                    } catch (err) {
+                        console.error('링크 복사 실패:', err);
+                        e.target.textContent = '복사 실패';
+                    }
+                });
 
                 document.getElementById('teacher-code-input').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
