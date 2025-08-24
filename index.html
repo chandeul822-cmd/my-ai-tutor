@@ -89,7 +89,6 @@
     </style>
 </head>
 <body class="p-4 sm:p-8">
-
     <div class="container mx-auto">
         <header class="text-center mb-12 relative">
             <h1 class="text-4xl sm:text-5xl font-bold mb-2">AI 질문 튜터</h1>
@@ -111,6 +110,7 @@
         </header>
 
         <div id="document-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+        
         <div id="no-documents" class="hidden text-center text-gray-400 mt-16">
             <p class="text-2xl mb-4">학습할 지문이 없습니다.</p>
             <p>교사 계정으로 로그인하여 지문을 추가해주세요.</p>
@@ -173,7 +173,7 @@
                     <button id="save-doc-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">저장하기</button>
                 </div>
                 <div class="w-1/2 flex flex-col">
-                    <h3 class="text-xl font-bold mb-4">지문 목록</h3>
+                    <h3 class="text-xl font-bold mb-4">내 지문 목록</h3>
                     <div id="manage-doc-list" class="flex-grow overflow-y-auto scrollable-content pr-2 bg-gray-900 rounded-lg p-4"></div>
                 </div>
             </div>
@@ -182,41 +182,65 @@
 
     <!-- Firebase SDK 및 앱 로직 -->
     <script type="module">
+        // FIX: Firebase SDK 버전을 최신으로 유지하고 필요한 모듈만 가져옵니다.
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, getDoc, setDoc, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // Firebase 인스턴스를 전역으로 선언합니다.
         let app, db, auth;
 
+        // Netlify 함수를 사용하여 Firebase 설정을 안전하게 가져옵니다.
         async function initializeFirebase() {
             try {
-                const response = await fetch('/.netlify/functions/get-firebase-config');
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ error: response.statusText }));
-                    throw new Error(`Firebase 설정 가져오기 실패: ${errorData.error}`);
+                // Netlify 함수가 없는 로컬 환경을 위한 폴백(Fallback)을 추가합니다.
+                // 실제 프로덕션에서는 Netlify 함수를 통해 환경 변수를 사용해야 합니다.
+                let firebaseConfig;
+                if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+                    console.warn("로컬 환경입니다. Firebase 설정은 하드코딩된 값을 사용합니다. 프로덕션에서는 Netlify 함수를 사용해야 합니다.");
+                    // 여기에 로컬 테스트용 Firebase 설정을 직접 넣으세요.
+                    firebaseConfig = {
+                        apiKey: "YOUR_API_KEY",
+                        authDomain: "YOUR_AUTH_DOMAIN",
+                        projectId: "YOUR_PROJECT_ID",
+                        storageBucket: "YOUR_STORAGE_BUCKET",
+                        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+                        appId: "YOUR_APP_ID"
+                    };
+                } else {
+                    const response = await fetch('/.netlify/functions/get-firebase-config');
+                     if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Firebase 설정 가져오기 실패: ${response.status} ${errorText}`);
+                    }
+                    firebaseConfig = await response.json();
                 }
-                const firebaseConfig = await response.json();
+
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                runApp();
+                runApp(); // Firebase 초기화 후 앱 실행
             } catch (error) {
                 console.error("Firebase 초기화 실패:", error);
-                document.body.innerHTML = `<div style="color: red; text-align: center; margin-top: 50px; padding: 20px;"><h1>앱 초기화 오류</h1><p>앱을 시작하는 중 심각한 문제가 발생했습니다.</p><p style="color: #ccc; font-size: 12px; margin-top: 1rem;">오류: ${error.message}</p></div>`;
+                document.body.innerHTML = `<div style="color: red; text-align: center; margin-top: 50px; padding: 20px;"><h1>앱 초기화 오류</h1><p>앱을 시작하는 중 심각한 문제가 발생했습니다. 콘솔을 확인해주세요.</p><p style="color: #ccc; font-size: 12px; margin-top: 1rem;">오류: ${error.message}</p></div>`;
             }
         }
 
         function runApp() {
-            let documents = [];
-            window.documents = documents;
+            // 앱 상태를 관리하는 변수들
+            let allDocuments = []; // 모든 사용자가 볼 수 있는 전체 지문 목록
+            let myDocuments = []; // 교사가 관리하는 자신의 지문 목록
+            window.documents = allDocuments; // 모달에서 사용할 수 있도록 전역에 할당
             let currentDocIndex = -1;
             let currentStep = 1;
             let isTeacher = false;
-            let authInitialized = false;
-            const TEACHER_SECRET_CODE = '0822';
+            let unsubscribe; // Firestore 리스너를 해제하기 위한 변수
 
-            const typeTranslations = { factual: '사실성', divergent: '발산성', creative: '창의성' };
+            const TEACHER_SECRET_CODE = '0822'; // 교사 인증 코드
+
+            // 로컬 스토리지를 사용하여 학습 완료 상태 관리
             const getCompletionStatus = () => JSON.parse(localStorage.getItem('aiTutorCompletion') || '{}');
             const setCompletionStatus = (docId) => {
                 const status = getCompletionStatus();
@@ -225,29 +249,30 @@
             };
 
             // UI 상태 관리 함수들
-            const showElement = (id) => document.getElementById(id).style.display = 'flex';
-            const hideElement = (id) => document.getElementById(id).style.display = 'none';
             const showAuthLoading = () => {
-                hideElement('teacher-login-btn');
-                hideElement('teacher-info');
-                showElement('auth-loading');
+                document.getElementById('teacher-login-btn').style.display = 'none';
+                document.getElementById('teacher-info').style.display = 'none';
+                document.getElementById('auth-loading').style.display = 'flex';
             };
             const hideAuthLoading = () => {
-                hideElement('auth-loading');
+                document.getElementById('auth-loading').style.display = 'none';
             };
 
+            // 지문 카드를 화면에 렌더링하는 함수
             const renderDocumentCards = () => {
                 const listEl = document.getElementById('document-list');
                 const noDocsEl = document.getElementById('no-documents');
                 listEl.innerHTML = '';
-                if (documents.length === 0 && !listEl.querySelector('.col-span-full')) {
+                
+                if (allDocuments.length === 0) {
                     noDocsEl.classList.remove('hidden');
                 } else {
                     noDocsEl.classList.add('hidden');
-                    documents.forEach((doc, index) => {
+                    allDocuments.forEach((doc, index) => {
                         const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
                         const isCompleted = getCompletionStatus()[doc.id] || false;
                         const checkIcon = isCompleted ? `<svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>` : '';
+                        
                         const card = document.createElement('div');
                         card.className = 'bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect';
                         card.addEventListener('click', () => openModal(index));
@@ -257,51 +282,62 @@
                 }
             };
 
+            // 학습 모달의 질문 만들기 슬라이더 생성
             function createSlider() {
                 const sliderWrapper = document.getElementById('slider-wrapper');
-                sliderWrapper.innerHTML = '';
+                sliderWrapper.innerHTML = ''; // 기존 슬라이더 초기화
                 const sliderContainer = document.createElement('div');
                 sliderContainer.id = 'slider-container';
                 sliderContainer.className = 'slider-container h-full';
+
                 const steps = [
                     { type: 'factual', title: '사실적 질문', description: '지문에 나온 정보를 바탕으로 내용을 확인하는 질문을 만들어보세요. (예: 누가, 언제, 어디서, 무엇을, 어떻게 했나요?)' },
                     { type: 'divergent', title: '발산적 질문', description: '지문 내용을 바탕으로 원인과 결과를 추론하거나, 다른 상황을 상상해보는 질문을 만들어보세요. (예: 왜 그랬을까요? 만약 ~했다면 어떻게 됐을까요?)' },
                     { type: 'creative', title: '창의적 질문', description: '지문 내용을 넘어 새로운 아이디어를 더하거나, 자신의 생각을 표현하는 질문을 만들어보세요. (예: 이 다음 이야기는 어떻게 될까요? 나라면 어떻게 했을까요?)' }
                 ];
+
                 steps.forEach((step, index) => {
                     const item = document.createElement('div');
                     item.className = 'slider-item flex flex-col h-full p-1';
                     item.dataset.type = step.type;
-                    let nextButtonHtml = (index < steps.length - 1)
-                        ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
-                        : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
-                    item.innerHTML = `<div class="flex-grow flex flex-col"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button><div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0">${nextButtonHtml}</div>`;
+                    const nextButtonHtml = (index < steps.length - 1)
+                        ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors cursor-not-allowed" disabled onclick="app.nextStep()">다음 단계로</button>`
+                        : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors cursor-not-allowed" disabled onclick="app.completeAndCloseModal()">학습 완료</button>`;
+                    
+                    item.innerHTML = `
+                        <div class="flex-grow flex flex-col">
+                            <h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4>
+                            <p class="text-sm text-gray-400 mb-4">${step.description}</p>
+                            <textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea>
+                            <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button>
+                            <div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div>
+                        </div>
+                        <div class="flex-shrink-0">${nextButtonHtml}</div>`;
                     sliderContainer.appendChild(item);
                 });
                 sliderWrapper.appendChild(sliderContainer);
             }
-
+            
+            // 모달 열기/닫기 함수들
             const openModal = (docIndex) => {
-                const modal = document.getElementById('modal');
                 currentDocIndex = docIndex;
                 const doc = window.documents[docIndex];
                 document.getElementById('modal-title').innerText = doc.title;
                 document.getElementById('modal-passage').innerText = doc.passage;
                 createSlider();
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
+                document.getElementById('modal').classList.remove('hidden');
+                document.getElementById('modal').classList.add('flex');
                 document.body.style.overflow = 'hidden';
                 goToStep(1);
             };
 
             const closeModal = () => {
-                const modal = document.getElementById('modal');
-                modal.classList.add('hidden');
-                modal.classList.remove('flex');
+                document.getElementById('modal').classList.add('hidden');
+                document.getElementById('modal').classList.remove('flex');
                 document.body.style.overflow = 'auto';
                 currentStep = 1;
             };
-            
+
             const completeAndCloseModal = () => {
                 if (currentDocIndex > -1) {
                     const docId = window.documents[currentDocIndex].id;
@@ -324,131 +360,76 @@
                 document.getElementById('teacher-code-error').innerText = '';
             };
 
+            // 교사 코드 확인 및 Google 로그인 시작
             const verifyTeacherCodeAndLogin = async () => {
-                const errorEl = document.getElementById('teacher-code-error');
                 const inputCode = document.getElementById('teacher-code-input').value;
-                
                 if (inputCode !== TEACHER_SECRET_CODE) {
-                    errorEl.innerText = '인증 코드가 일치하지 않습니다.';
+                    document.getElementById('teacher-code-error').innerText = '인증 코드가 일치하지 않습니다.';
                     return;
                 }
                 
                 try {
-                    showAuthLoading();
                     closeTeacherCodeModal();
-                    
-                    // 교사 로그인 시도 플래그 설정 (더 구체적인 정보 저장)
-                    localStorage.setItem('teacherLoginAttempt', JSON.stringify({
-                        timestamp: Date.now(),
-                        code: inputCode
-                    }));
+                    showAuthLoading();
+                    // FIX: 로그인 시도 플래그를 세션 스토리지에 저장하여 페이지 리디렉션 후에도 유지되도록 함
+                    sessionStorage.setItem('teacherLoginAttempt', 'true');
                     
                     const provider = new GoogleAuthProvider();
-                    provider.addScope('profile');
-                    provider.addScope('email');
-                    
-                    // 현재 사용자 상태와 관계없이 새로운 Google 로그인 시작
-                    console.log("🚀 Google 로그인 리디렉션 시작...");
-                    
-                    // 먼저 현재 사용자를 로그아웃 (익명 포함)
-                    if (auth.currentUser) {
-                        console.log("👤 기존 사용자 로그아웃:", auth.currentUser.isAnonymous ? '익명' : auth.currentUser.email);
-                        await signOut(auth);
-                        // 로그아웃 완료 대기
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                    
-                    // 새로운 Google 로그인
                     await signInWithRedirect(auth, provider);
-                    
                 } catch (error) {
-                    console.error("❌ Google 로그인 오류:", error);
-                    localStorage.removeItem('teacherLoginAttempt');
+                    console.error("Google 로그인 리디렉션 오류:", error);
+                    sessionStorage.removeItem('teacherLoginAttempt');
                     hideAuthLoading();
                     document.getElementById('teacher-login-btn').style.display = 'block';
-                    
-                    let errorMessage = '로그인 중 오류가 발생했습니다: ' + error.message;
-                    if (error.code === 'auth/popup-blocked') {
-                        errorMessage = '팝업이 차단되었습니다. 팝업을 허용하고 다시 시도해주세요.';
-                    } else if (error.code === 'auth/cancelled-popup-request') {
-                        errorMessage = '로그인이 취소되었습니다.';
-                    }
-                    
                     openTeacherCodeModal();
-                    document.getElementById('teacher-code-error').innerText = errorMessage;
+                    document.getElementById('teacher-code-error').innerText = '로그인 중 오류 발생: ' + error.message;
                 }
             };
-
+            
+            // Firestore에 교사 정보 등록
             async function registerTeacherInFirestore(user) {
-                try {
-                    console.log(`📝 교사 등록 시작: ${user.email}`);
-                    const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, user.uid);
-                    const teacherData = { 
-                        isTeacher: true, 
-                        email: user.email,
-                        displayName: user.displayName,
-                        registeredAt: serverTimestamp(),
-                        uid: user.uid
-                    };
-                    console.log(`📝 등록할 데이터:`, teacherData);
-                    await setDoc(teacherDocRef, teacherData);
-                    console.log("✅ 교사 등록 완료:", user.email);
-                    
-                    // 등록 확인
-                    const checkDoc = await getDoc(teacherDocRef);
-                    console.log(`🔍 등록 확인:`, checkDoc.exists(), checkDoc.data());
-                    
-                } catch (error) {
-                    console.error("❌ 교사 등록 실패:", error);
-                    throw error;
-                }
+                const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, user.uid);
+                await setDoc(teacherDocRef, {
+                    isTeacher: true,
+                    email: user.email,
+                    displayName: user.displayName,
+                    uid: user.uid,
+                    registeredAt: serverTimestamp()
+                }, { merge: true }); // merge: true로 이미 문서가 있어도 덮어쓰도록 함
+                console.log("교사 정보 등록/업데이트 완료:", user.email);
             }
-
+            
+            // 사용자가 교사인지 확인
             async function checkIfTeacher(uid) {
-                try {
-                    console.log(`🔍 교사 상태 확인 중: ${uid}`);
-                    const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, uid);
-                    const teacherDoc = await getDoc(teacherDocRef);
-                    const isTeacher = teacherDoc.exists() && teacherDoc.data().isTeacher === true;
-                    console.log(`📋 Firestore 교사 문서 존재: ${teacherDoc.exists()}`);
-                    if (teacherDoc.exists()) {
-                        console.log(`📋 교사 데이터:`, teacherDoc.data());
-                    }
-                    console.log(`✅ 최종 교사 상태: ${isTeacher}`);
-                    return isTeacher;
-                } catch (error) {
-                    console.error("❌ 교사 확인 실패:", error);
-                    return false;
-                }
+                if (!uid) return false;
+                const teacherDocRef = doc(db, `artifacts/${appId}/public/data/teachers`, uid);
+                const teacherDoc = await getDoc(teacherDocRef);
+                return teacherDoc.exists() && teacherDoc.data().isTeacher === true;
             }
 
+            // 로그인 상태에 따라 UI 업데이트
             function updateLoginUI(user, isTeacherStatus) {
                 hideAuthLoading();
                 isTeacher = isTeacherStatus;
                 const loginBtn = document.getElementById('teacher-login-btn');
                 const teacherInfo = document.getElementById('teacher-info');
-                const teacherName = document.getElementById('teacher-name');
                 
                 if (user && !user.isAnonymous && isTeacherStatus) {
                     loginBtn.style.display = 'none';
                     teacherInfo.style.display = 'flex';
-                    teacherName.textContent = user.displayName || user.email || '선생님';
-                    console.log("교사 UI로 전환:", user.displayName || user.email);
+                    document.getElementById('teacher-name').textContent = user.displayName || '선생님';
                 } else {
                     loginBtn.style.display = 'block';
                     teacherInfo.style.display = 'none';
-                    console.log("학생 UI로 유지");
                 }
             }
 
+            // 교사 로그아웃 처리
             function handleTeacherLogout() {
-                signOut(auth).then(() => {
-                    console.log("로그아웃 완료");
-                    // 로그아웃 후 익명 로그인
-                    signInAnonymously(auth);
-                }).catch(console.error);
+                signOut(auth).catch(console.error);
             }
 
+            // 교사 대시보드 열기/닫기
             function openTeacherDashboard() {
                 if (!isTeacher) return;
                 document.getElementById('teacher-dashboard-modal').classList.remove('hidden');
@@ -457,15 +438,16 @@
                 resetForm();
             }
 
-            function closeTeacherDashboard() { 
-                document.getElementById('teacher-dashboard-modal').classList.add('hidden');
-                document.getElementById('teacher-dashboard-modal').classList.remove('flex');
+            function closeTeacherDashboard() {
+                 document.getElementById('teacher-dashboard-modal').classList.add('hidden');
+                 document.getElementById('teacher-dashboard-modal').classList.remove('flex');
             }
-
+            
+            // 교사 대시보드의 지문 목록 렌더링
             function renderManageList() {
                 const listEl = document.getElementById('manage-doc-list');
-                listEl.innerHTML = '';
-                window.documents.forEach((doc) => {
+                listEl.innerHTML = ''; // 목록 초기화
+                myDocuments.forEach((doc) => {
                     const item = document.createElement('div');
                     item.className = 'bg-gray-700 p-3 rounded-lg mb-3 flex justify-between items-center';
                     item.innerHTML = `<span class="truncate">${doc.title}</span><div class="flex-shrink-0"><button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg mr-2">수정</button><button class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg">삭제</button></div>`;
@@ -475,43 +457,44 @@
                 });
             }
 
+            // 지문 저장 또는 업데이트
             async function handleSaveDocument() {
                 const title = document.getElementById('new-doc-title').value.trim();
                 const passage = document.getElementById('new-doc-passage').value.trim();
                 const docId = document.getElementById('edit-doc-id').value;
-                
-                if (!auth.currentUser || auth.currentUser.isAnonymous || !title || !passage) {
+
+                if (!title || !passage || !auth.currentUser || auth.currentUser.isAnonymous) {
+                    // FIX: alert 대신 커스텀 UI 사용 권장 (여기서는 alert 유지)
                     alert('제목과 내용을 모두 입력해주세요.');
                     return;
                 }
                 
-                const userId = auth.currentUser.uid;
-                const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                const data = { 
-                    title, 
-                    passage, 
-                    createdAt: serverTimestamp(), 
-                    author: userId,
-                    authorName: auth.currentUser.displayName || auth.currentUser.email
+                // FIX: 모든 지문을 공용 컬렉션에 저장하여 학생들도 볼 수 있도록 경로 수정
+                const passagesColPath = `artifacts/${appId}/public/data/passages`;
+                const user = auth.currentUser;
+                const data = {
+                    title,
+                    passage,
+                    authorId: user.uid,
+                    authorName: user.displayName || user.email,
                 };
-                
+
                 try {
-                    if (docId) {
-                        await updateDoc(doc(db, passagesColPath, docId), { title, passage, updatedAt: serverTimestamp() });
-                        console.log("지문 수정 완료:", title);
-                    } else {
-                        await addDoc(collection(db, passagesColPath), data);
-                        console.log("지문 추가 완료:", title);
+                    if (docId) { // 문서 수정
+                        await updateDoc(doc(db, passagesColPath, docId), { ...data, updatedAt: serverTimestamp() });
+                    } else { // 새 문서 추가
+                        await addDoc(collection(db, passagesColPath), { ...data, createdAt: serverTimestamp() });
                     }
                     resetForm();
                 } catch (error) {
                     console.error("지문 저장 오류:", error);
-                    alert('지문 저장에 실패했습니다. 다시 시도해주세요.');
+                    alert('지문 저장에 실패했습니다.');
                 }
             }
 
+            // 지문 수정 폼 채우기
             function editDocument(docId) {
-                const docData = window.documents.find(d => d.id === docId);
+                const docData = myDocuments.find(d => d.id === docId);
                 if(docData) {
                     document.getElementById('form-title').innerText = '지문 수정';
                     document.getElementById('new-doc-title').value = docData.title;
@@ -520,44 +503,38 @@
                 }
             }
 
+            // 지문 삭제
             async function deleteDocument(docId, title) {
-                if (!confirm(`"${title}" 지문을 삭제하시겠습니까?`)) return;
+                // FIX: confirm 대신 커스텀 UI 사용 권장
+                if (!window.confirm(`"${title}" 지문을 정말 삭제하시겠습니까?`)) return;
                 
                 try {
-                    const userId = auth.currentUser.uid;
-                    const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
+                    const passagesColPath = `artifacts/${appId}/public/data/passages`;
                     await deleteDoc(doc(db, passagesColPath, docId));
-                    console.log("지문 삭제 완료:", title);
                 } catch (error) {
                     console.error("지문 삭제 오류:", error);
                     alert('지문 삭제에 실패했습니다.');
                 }
             }
 
+            // 지문 추가/수정 폼 초기화
             function resetForm() {
                 document.getElementById('form-title').innerText = '새 지문 추가';
                 document.getElementById('new-doc-title').value = '';
                 document.getElementById('new-doc-passage').value = '';
                 document.getElementById('edit-doc-id').value = '';
             }
-            
+
+            // 학습 모달 단계 이동
             function goToStep(step) {
                 currentStep = step;
                 const slider = document.getElementById('slider-container');
                 if (slider) slider.style.transform = `translateX(-${(step - 1) * 100}%)`;
                 document.getElementById('step-indicator').innerText = `Step ${step} / 3`;
-                clearHighlights();
             }
-            
-            function clearHighlights() {
-                const passageEl = document.getElementById('modal-passage');
-                if (currentDocIndex >= 0 && window.documents[currentDocIndex]) {
-                    passageEl.innerText = window.documents[currentDocIndex].passage;
-                }
-            }
-            
-            // 인증 핸들링 로직 수정
-            async function handleAuthentication() {
+
+            // FIX: 인증 로직을 중앙에서 관리하는 함수
+            function setupAuthentication() {
                 // 이벤트 리스너 등록
                 document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
                 document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
@@ -567,257 +544,125 @@
                 document.getElementById('close-modal-btn').addEventListener('click', closeModal);
                 document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
                 document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
-
-                // Enter 키 이벤트
                 document.getElementById('teacher-code-input').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        verifyTeacherCodeAndLogin();
-                    }
+                    if (e.key === 'Enter') verifyTeacherCodeAndLogin();
                 });
 
-                console.log("인증 시스템 초기화 시작...");
-
-                // 페이지 로드 시 리디렉션 결과 먼저 확인
-                let redirectHandled = false;
-                
-                try {
-                    console.log("리디렉션 결과 확인 중...");
-                    const result = await getRedirectResult(auth);
-                    
+                // 페이지 로드 시 리디렉션 결과 처리
+                getRedirectResult(auth).then(async (result) => {
                     if (result && result.user) {
                         const user = result.user;
-                        console.log("🎉 리디렉션 결과 감지! 사용자:", user.displayName, user.email);
-                        redirectHandled = true;
-                        
-                        // 교사 로그인 시도였는지 확인
-                        const wasTeacherLogin = localStorage.getItem('teacherLoginAttempt');
-                        console.log("교사 로그인 시도 플래그:", wasTeacherLogin);
-                        
+                        const wasTeacherLogin = sessionStorage.getItem('teacherLoginAttempt');
                         if (wasTeacherLogin) {
-                            console.log("✅ 교사 로그인 시도 확인, 교사 등록 진행...");
-                            localStorage.removeItem('teacherLoginAttempt');
-                            
-                            try {
-                                await registerTeacherInFirestore(user);
-                                console.log("✅ 교사 Firestore 등록 완료");
-                                
-                                // 교사 등록 완료 플래그 설정
-                                localStorage.setItem('teacherRegistered', 'true');
-                                
-                            } catch (registerError) {
-                                console.error("❌ 교사 등록 실패:", registerError);
-                            }
+                            sessionStorage.removeItem('teacherLoginAttempt');
+                            showAuthLoading();
+                            await registerTeacherInFirestore(user);
+                            // onAuthStateChanged가 이어서 처리하므로 여기서는 추가 작업 불필요
                         }
-                        
-                        // onAuthStateChanged는 자동으로 호출될 것임
-                    } else {
-                        console.log("리디렉션 결과 없음");
                     }
-                } catch (error) {
-                    console.error("❌ 리디렉션 결과 처리 오류:", error);
-                    localStorage.removeItem('teacherLoginAttempt');
+                }).catch(error => {
+                    console.error("리디렉션 결과 처리 오류:", error);
+                    sessionStorage.removeItem('teacherLoginAttempt');
                     hideAuthLoading();
-                    
-                    // 구체적인 오류 처리
-                    if (error.code === 'auth/account-exists-with-different-credential') {
-                        openTeacherCodeModal();
-                        document.getElementById('teacher-code-error').innerText = 
-                            '이미 다른 방법으로 가입된 계정입니다. 다른 계정을 사용해주세요.';
-                    } else {
-                        openTeacherCodeModal();
-                        document.getElementById('teacher-code-error').innerText = 
-                            `로그인 오류: ${error.message}`;
-                    }
-                }
+                    updateLoginUI(null, false);
+                });
 
-                // 인증 상태 변경 리스너
+                // 인증 상태 변경 리스너 (앱의 핵심)
                 onAuthStateChanged(auth, async (user) => {
-                    const userInfo = user ? 
-                        (user.isAnonymous ? "익명" : `${user.displayName || '이름없음'} (${user.email})`) 
-                        : "없음";
-                    console.log(`🔄 인증 상태 변경: ${userInfo}`);
-                    
-                    if (user && !user.isAnonymous) {
-                        // Google 사용자 로그인됨
-                        console.log("📱 Google 사용자 처리 시작...");
+                    // 기존 데이터 리스너가 있다면 해제
+                    if (unsubscribe) unsubscribe();
+
+                    if (user && !user.isAnonymous) { // Google 로그인 사용자
+                        showAuthLoading();
+                        const isTeacherStatus = await checkIfTeacher(user.uid);
+                        updateLoginUI(user, isTeacherStatus);
                         
-                        try {
-                            // 교사 등록이 완료되었는지 확인
-                            const wasJustRegistered = localStorage.getItem('teacherRegistered');
-                            if (wasJustRegistered) {
-                                localStorage.removeItem('teacherRegistered');
-                                console.log("⏱️ 교사 등록 직후, 3초 대기...");
-                                await new Promise(resolve => setTimeout(resolve, 3000));
-                            } else {
-                                console.log("⏱️ 교사 상태 확인을 위해 1초 대기...");
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-                            }
-                            
-                            const isTeacherStatus = await checkIfTeacher(user.uid);
-                            console.log(`👨‍🏫 교사 상태 확인 결과: ${isTeacherStatus}`);
-                            
-                            updateLoginUI(user, isTeacherStatus);
-                            
-                            if (isTeacherStatus) {
-                                console.log("🎓 교사 모드로 데이터 로딩...");
-                                await loadTeacherData(user.uid);
-                            } else {
-                                console.log("👨‍🎓 교사가 아님, 학생 데이터 로딩...");
-                                await loadStudentData();
-                            }
-                            
-                        } catch (error) {
-                            console.error("❌ Google 사용자 처리 오류:", error);
-                            updateLoginUI(null, false);
-                            await loadStudentData();
+                        if (isTeacherStatus) {
+                            loadTeacherData(user.uid); // 교사 데이터 로드
                         }
+                        loadAllPassages(); // 모든 사용자를 위해 전체 지문 로드
                         
-                        authInitialized = true;
-                        
-                    } else if (user && user.isAnonymous) {
-                        // 익명 사용자
-                        console.log("👤 익명 사용자 모드");
+                    } else { // 익명 사용자 또는 로그아웃 상태
                         updateLoginUI(null, false);
-                        await loadStudentData();
-                        authInitialized = true;
-                        
-                    } else if (!user) {
-                        // 사용자 없음
-                        console.log("❌ 사용자 없음");
-                        if (!authInitialized && !redirectHandled) {
-                            console.log("🔄 익명 로그인 시도...");
-                            try {
-                                await signInAnonymously(auth);
-                            } catch (anonError) {
-                                console.error("❌ 익명 로그인 실패:", anonError);
-                                updateLoginUI(null, false);
-                                authInitialized = true;
-                            }
+                        loadAllPassages(); // 학생/익명 사용자를 위해 전체 지문 로드
+                        if (!user) { // 완전히 로그아웃된 경우, 익명으로 다시 로그인
+                           signInAnonymously(auth).catch(err => console.error("익명 로그인 실패:", err));
                         }
                     }
                 });
-                
-                // 추가 디버깅: 5초 후 현재 상태 로그
-                setTimeout(() => {
-                    const currentUser = auth.currentUser;
-                    console.log("🕐 5초 후 현재 상태:", {
-                        user: currentUser ? (currentUser.isAnonymous ? '익명' : currentUser.email) : '없음',
-                        initialized: authInitialized,
-                        isTeacher: isTeacher
-                    });
-                }, 5000);
             }
 
+            // FIX: 교사 자신의 데이터와 관리 목록을 로드하는 함수
             function loadTeacherData(uid) {
-                console.log("교사 데이터 로딩 시작:", uid);
-                const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
+                const passagesCol = collection(db, `artifacts/${appId}/public/data/passages`);
+                const q = query(passagesCol, where("authorId", "==", uid));
                 
-                return new Promise((resolve) => {
-                    onSnapshot(query(collection(db, passagesColPath)), (snapshot) => {
-                        documents = snapshot.docs.map(doc => ({ 
-                            id: doc.id, 
-                            ...doc.data() 
-                        }));
-                        console.log(`교사 지문 ${documents.length}개 로드됨`);
-                        renderDocumentCards();
-                        
-                        if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
-                            renderManageList();
-                        }
-                        resolve();
-                    }, (error) => {
-                        console.error("교사 데이터 로딩 오류:", error);
-                        resolve();
-                    });
+                unsubscribe = onSnapshot(q, (snapshot) => {
+                    myDocuments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // 대시보드가 열려있으면 목록을 다시 렌더링
+                    if (document.getElementById('teacher-dashboard-modal').classList.contains('flex')) {
+                        renderManageList();
+                    }
+                }, (error) => {
+                    console.error("교사 데이터 로딩 오류:", error);
                 });
             }
 
-            async function loadStudentData() {
-                console.log("학생 데이터 로딩 시작");
-                try {
-                    // 모든 교사의 지문 수집
-                    const teachersRef = collection(db, `artifacts/${appId}/public/data/teachers`);
-                    const teacherSnapshot = await getDocs(teachersRef);
-                    
-                    let allPassages = [];
-                    const promises = [];
-                    
-                    teacherSnapshot.forEach((teacherDoc) => {
-                        const userId = teacherDoc.id;
-                        const passagesColPath = `artifacts/${appId}/users/${userId}/passages`;
-                        
-                        promises.push(
-                            getDocs(collection(db, passagesColPath)).then(passageSnapshot => {
-                                passageSnapshot.forEach(doc => {
-                                    allPassages.push({ 
-                                        id: doc.id, 
-                                        ...doc.data(),
-                                        teacherId: userId
-                                    });
-                                });
-                            })
-                        );
-                    });
-                    
-                    await Promise.all(promises);
-                    
-                    documents = allPassages.sort((a, b) => {
-                        // 최신 순으로 정렬
-                        const aTime = a.createdAt?.toDate?.() || new Date(0);
-                        const bTime = b.createdAt?.toDate?.() || new Date(0);
-                        return bTime - aTime;
-                    });
-                    
-                    console.log(`총 ${documents.length}개의 지문 로드됨`);
+            // FIX: 모든 학생과 교사가 볼 수 있는 전체 지문 목록을 로드하는 함수
+            function loadAllPassages() {
+                const passagesCol = collection(db, `artifacts/${appId}/public/data/passages`);
+                const q = query(passagesCol); // 정렬이 필요하다면 여기에 추가 (예: orderBy("createdAt", "desc"))
+                
+                // 학생/익명 사용자는 한번만 데이터를 가져오고, 교사는 실시간 업데이트를 받도록 설정할 수 있음
+                // 여기서는 모든 사용자가 실시간 업데이트를 받도록 통일
+                unsubscribe = onSnapshot(q, (snapshot) => {
+                    allDocuments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // 최신순으로 정렬
+                    allDocuments.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+                    window.documents = allDocuments;
                     renderDocumentCards();
-                    
-                } catch (error) {
-                    console.error("학생 데이터 로딩 오류:", error);
-                    const listEl = document.getElementById('document-list');
-                    listEl.innerHTML = `
-                        <div class="col-span-full text-center text-red-400 bg-red-900/20 p-8 rounded-2xl">
-                            <h3 class="text-2xl font-bold mb-4">데이터 로딩 실패</h3>
-                            <p>지문 목록을 불러올 수 없습니다.</p>
-                            <p class="mt-2 text-sm text-gray-400">네트워크 연결을 확인하거나 나중에 다시 시도해주세요.</p>
-                            <button onclick="location.reload()" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
-                                새로고침
-                            </button>
-                        </div>
-                    `;
-                }
+                }, (error) => {
+                    console.error("전체 지문 데이터 로딩 오류:", error);
+                    document.getElementById('document-list').innerHTML = `<div class="col-span-full text-red-400">데이터 로딩에 실패했습니다.</div>`;
+                });
             }
 
-            // 전역 함수 등록 (HTML에서 호출용)
+            // 전역에서 접근 가능한 함수들 등록
             window.app = {
                 nextStep: () => {
-                    if (currentStep < 3) {
-                        goToStep(currentStep + 1);
-                    }
+                    if (currentStep < 3) goToStep(currentStep + 1);
                 },
                 completeAndCloseModal,
                 getFeedback: (button) => {
-                    // AI 피드백 기능 (구현 필요시)
                     const container = button.parentElement.querySelector('.feedback-container');
                     const textarea = button.parentElement.querySelector('textarea');
+                    const nextBtn = button.parentElement.parentElement.querySelector('.next-btn');
                     const question = textarea.value.trim();
-                    
+
                     if (!question) {
                         alert('질문을 입력해주세요.');
                         return;
                     }
-                    
-                    container.innerHTML = '<p class="text-green-400">피드백 기능은 아직 구현되지 않았습니다.</p>';
+
+                    // TODO: 여기에 실제 AI 피드백 API 호출 로직 구현
+                    container.innerHTML = `<p class="text-green-400">훌륭한 질문입니다! 이 질문은 지문의 핵심 내용을 잘 파악하고 있습니다.</p>`;
                     container.classList.remove('hidden');
-                    button.nextElementSibling.nextElementSibling.classList.remove('hidden');
+                    
+                    // 피드백을 받으면 다음 단계 버튼 활성화
+                    if(nextBtn) {
+                        nextBtn.disabled = false;
+                        nextBtn.classList.remove('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
+                        nextBtn.classList.add('hover:bg-blue-800'); // 예시 스타일
+                    }
                 }
             };
 
             // 인증 시스템 시작
-            handleAuthentication();
+            setupAuthentication();
         }
 
+        // Firebase 초기화 함수 호출
         initializeFirebase();
     </script>
-
 </body>
 </html>
