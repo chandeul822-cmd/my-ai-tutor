@@ -337,35 +337,37 @@
                     showAuthLoading();
                     closeTeacherCodeModal();
                     
+                    // 교사 로그인 시도 플래그 설정 (더 구체적인 정보 저장)
+                    localStorage.setItem('teacherLoginAttempt', JSON.stringify({
+                        timestamp: Date.now(),
+                        code: inputCode
+                    }));
+                    
                     const provider = new GoogleAuthProvider();
                     provider.addScope('profile');
                     provider.addScope('email');
                     
-                    // 교사 로그인 플래그 설정
-                    localStorage.setItem('teacherLoginAttempt', 'true');
+                    // 현재 사용자 상태와 관계없이 새로운 Google 로그인 시작
+                    console.log("🚀 Google 로그인 리디렉션 시작...");
                     
-                    const currentUser = auth.currentUser;
-                    
-                    if (currentUser && currentUser.isAnonymous) {
-                        // 익명 사용자 로그아웃 후 새로 로그인
-                        console.log("익명 사용자 로그아웃 후 Google 로그인...");
+                    // 먼저 현재 사용자를 로그아웃 (익명 포함)
+                    if (auth.currentUser) {
+                        console.log("👤 기존 사용자 로그아웃:", auth.currentUser.isAnonymous ? '익명' : auth.currentUser.email);
                         await signOut(auth);
-                        // 잠깐 대기 후 Google 로그인
-                        setTimeout(() => {
-                            signInWithRedirect(auth, provider);
-                        }, 100);
-                    } else {
-                        // 새로 로그인
-                        console.log("Google 로그인 리디렉션 시작...");
-                        await signInWithRedirect(auth, provider);
+                        // 로그아웃 완료 대기
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     }
+                    
+                    // 새로운 Google 로그인
+                    await signInWithRedirect(auth, provider);
+                    
                 } catch (error) {
-                    console.error("Google 로그인 오류:", error);
+                    console.error("❌ Google 로그인 오류:", error);
                     localStorage.removeItem('teacherLoginAttempt');
                     hideAuthLoading();
                     document.getElementById('teacher-login-btn').style.display = 'block';
                     
-                    let errorMessage = '로그인 중 오류가 발생했습니다.';
+                    let errorMessage = '로그인 중 오류가 발생했습니다: ' + error.message;
                     if (error.code === 'auth/popup-blocked') {
                         errorMessage = '팝업이 차단되었습니다. 팝업을 허용하고 다시 시도해주세요.';
                     } else if (error.code === 'auth/cancelled-popup-request') {
