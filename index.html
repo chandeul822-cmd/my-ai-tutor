@@ -88,7 +88,8 @@
                 </button>
                 <div id="teacher-info" class="hidden items-center">
                     <span id="teacher-name" class="mr-4"></span>
-                    <button id="manage-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mr-2">지문 관리</button>
+                    <!-- '지문 관리'에서 '지문 추가 및 관리'로 버튼 텍스트 변경 -->
+                    <button id="manage-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mr-2">지문 추가 및 관리</button>
                     <button id="teacher-logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">로그아웃</button>
                 </div>
             </div>
@@ -367,11 +368,11 @@
                 const teacherInfo = document.getElementById('teacher-info');
                 const teacherName = document.getElementById('teacher-name');
                 const manageBtn = document.getElementById('manage-btn');
-                if (user && !user.isAnonymous) {
+                if (user && !user.isAnonymous && isTeacherStatus) { // 교사일 경우에만 UI 변경
                     loginBtn.style.display = 'none';
                     teacherInfo.style.display = 'flex';
                     teacherName.textContent = user.displayName || '선생님';
-                    manageBtn.style.display = isTeacher ? 'block' : 'none';
+                    manageBtn.style.display = 'block';
                 } else {
                     loginBtn.style.display = 'block';
                     teacherInfo.style.display = 'none';
