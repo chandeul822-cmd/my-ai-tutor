@@ -254,10 +254,12 @@
                         const preview = doc.passage.split('\n').slice(0, 8).join('<br>');
                         const isCompleted = getCompletionStatus()[doc.id] || false;
                         const checkIcon = isCompleted ? `<svg class="w-7 h-7 text-green-400 ml-2 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>` : '';
+                        const safeTitle = doc.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                        const safePreview = preview.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                         const card = document.createElement('div');
                         card.className = 'bg-gray-800 rounded-2xl p-6 cursor-pointer card-hover-effect';
                         card.addEventListener('click', () => openModal(index));
-                        card.innerHTML = `<div class="flex justify-between items-start mb-4"><div class="flex items-center"><h2 class="text-2xl font-bold">${doc.title}</h2>${checkIcon}</div><div class="icon-container text-4xl text-green-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div></div><div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm"><p>${preview}</p></div>`;
+                        card.innerHTML = `<div class="flex justify-between items-start mb-4"><div class="flex items-center"><h2 class="text-2xl font-bold">${safeTitle}</h2>${checkIcon}</div><div class="icon-container text-4xl text-green-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div></div><div class="bg-gray-900 p-4 rounded-lg h-48 overflow-hidden text-gray-400 text-sm"><p>${safePreview}</p></div>`;
                         listEl.appendChild(card);
                     });
                 }
@@ -499,12 +501,15 @@
                         new Date(doc.createdAt.toDate()).toLocaleDateString('ko-KR') : 
                         '날짜 없음';
                     
+                    const safeTitle = doc.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const safePassage = doc.passage.replace(/"/g, '&quot;').replace(/'/g, '&#39;').substring(0, 100);
+                    
                     item.innerHTML = `
                         <div class="flex justify-between items-start">
                             <div class="flex-grow mr-4">
-                                <h4 class="font-bold text-white mb-1 truncate">${doc.title}</h4>
+                                <h4 class="font-bold text-white mb-1 truncate">${safeTitle}</h4>
                                 <p class="text-sm text-gray-400 mb-2">${createdDate}</p>
-                                <p class="text-xs text-gray-500 line-clamp-2">${doc.passage.substring(0, 100)}...</p>
+                                <p class="text-xs text-gray-500 line-clamp-2">${safePassage}...</p>
                             </div>
                             <div class="flex-shrink-0 flex gap-2">
                                 <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded text-sm transition-colors">
@@ -726,20 +731,33 @@
             }
 
             async function handleAuthentication() {
-                document.getElementById('teacher-login-btn').addEventListener('click', openTeacherCodeModal);
-                document.getElementById('teacher-logout-btn').addEventListener('click', handleTeacherLogout);
-                document.getElementById('manage-btn').addEventListener('click', openTeacherDashboard);
-                document.getElementById('cancel-teacher-code-btn').addEventListener('click', closeTeacherCodeModal);
-                document.getElementById('verify-teacher-code-btn').addEventListener('click', verifyTeacherCodeAndLogin);
-                document.getElementById('close-modal-btn').addEventListener('click', closeModal);
-                document.getElementById('close-dashboard-btn').addEventListener('click', closeTeacherDashboard);
-                document.getElementById('save-doc-btn').addEventListener('click', handleSaveDocument);
+                // DOM이 완전히 로드된 후 이벤트 리스너 설정
+                const teacherLoginBtn = document.getElementById('teacher-login-btn');
+                const teacherLogoutBtn = document.getElementById('teacher-logout-btn');
+                const manageBtn = document.getElementById('manage-btn');
+                const cancelTeacherCodeBtn = document.getElementById('cancel-teacher-code-btn');
+                const verifyTeacherCodeBtn = document.getElementById('verify-teacher-code-btn');
+                const closeModalBtn = document.getElementById('close-modal-btn');
+                const closeDashboardBtn = document.getElementById('close-dashboard-btn');
+                const saveDocBtn = document.getElementById('save-doc-btn');
+                const teacherCodeInput = document.getElementById('teacher-code-input');
 
-                document.getElementById('teacher-code-input').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        verifyTeacherCodeAndLogin();
-                    }
-                });
+                if (teacherLoginBtn) teacherLoginBtn.addEventListener('click', openTeacherCodeModal);
+                if (teacherLogoutBtn) teacherLogoutBtn.addEventListener('click', handleTeacherLogout);
+                if (manageBtn) manageBtn.addEventListener('click', openTeacherDashboard);
+                if (cancelTeacherCodeBtn) cancelTeacherCodeBtn.addEventListener('click', closeTeacherCodeModal);
+                if (verifyTeacherCodeBtn) verifyTeacherCodeBtn.addEventListener('click', verifyTeacherCodeAndLogin);
+                if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+                if (closeDashboardBtn) closeDashboardBtn.addEventListener('click', closeTeacherDashboard);
+                if (saveDocBtn) saveDocBtn.addEventListener('click', handleSaveDocument);
+
+                if (teacherCodeInput) {
+                    teacherCodeInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            verifyTeacherCodeAndLogin();
+                        }
+                    });
+                }
 
                 console.log("🚀 인증 시스템 초기화 시작...");
 
@@ -992,15 +1010,15 @@
                         <!-- 분석 근거 -->
                         <div class="bg-gray-800 p-4 rounded-lg">
                             <h4 class="text-lg font-bold mb-2 text-blue-400">📊 분석 근거</h4>
-                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.rationale}</p>
+                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.rationale.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</p>
                         </div>
                         
-                        <!-- 피드백 내용 -->
+                        // 피드백 내용 -->
                         <div class="bg-gray-800 p-4 rounded-lg">
                             <h4 class="text-lg font-bold mb-2 ${isPassing ? 'text-green-400' : 'text-orange-400'}">
                                 ${isPassing ? '✅ 좋은 질문입니다!' : '⚠️ 개선이 필요합니다'}
                             </h4>
-                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.feedback}</p>
+                            <p class="text-gray-300 text-sm leading-relaxed">${feedback.feedback.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</p>
                         </div>
                 `;
                 
@@ -1010,7 +1028,7 @@
                         <div class="bg-purple-900/30 p-4 rounded-lg border border-purple-600/30">
                             <h4 class="text-purple-400 font-bold mb-2">💡 생각해볼 힌트</h4>
                             <ul class="text-gray-300 text-sm space-y-1">
-                                ${feedback.hints.map(hint => `<li>• ${hint}</li>`).join('')}
+                                ${feedback.hints.map(hint => `<li>• ${hint.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</li>`).join('')}
                             </ul>
                         </div>
                     `;
@@ -1021,7 +1039,7 @@
                     feedbackHTML += `
                         <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-600/30">
                             <h4 class="text-blue-400 font-bold mb-2">🎯 비슷한 질문 예시</h4>
-                            <p class="text-gray-300 text-sm italic">"${feedback.example}"</p>
+                            <p class="text-gray-300 text-sm italic">"${feedback.example.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"</p>
                         </div>
                     `;
                 }
@@ -1113,7 +1131,17 @@
             handleAuthentication();
         }
 
-        initializeFirebase();
+            // Firebase 및 앱 초기화를 DOM 로드 완료 후에 실행
+            document.addEventListener('DOMContentLoaded', function() {
+                initializeFirebase();
+            });
+
+        // DOM이 이미 로드된 경우를 위한 폴백
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeFirebase);
+        } else {
+            initializeFirebase();
+        }
     </script>
 
 </body>
