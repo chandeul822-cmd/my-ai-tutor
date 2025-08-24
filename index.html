@@ -1004,11 +1004,14 @@
                 
                 // 70% 이상이면 다음 버튼 활성화
                 if (isPassing) {
-                    const nextButton = button.nextElementSibling.nextElementSibling;
-                    if (nextButton) {
-                        nextButton.classList.remove('hidden');
-                        nextButton.classList.remove('text-gray-400');
-                        nextButton.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                    const sliderItem = button.closest('.slider-item');
+                    if (sliderItem) {
+                        const nextButton = sliderItem.querySelector('.next-btn');
+                        if (nextButton) {
+                            nextButton.classList.remove('hidden');
+                            nextButton.classList.remove('bg-gray-700', 'text-gray-400');
+                            nextButton.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
+                        }
                     }
                 }
                 
