@@ -341,12 +341,19 @@
                     provider.addScope('profile');
                     provider.addScope('email');
                     
+                    // 교사 로그인 플래그 설정
+                    localStorage.setItem('teacherLoginAttempt', 'true');
+                    
                     const currentUser = auth.currentUser;
                     
                     if (currentUser && currentUser.isAnonymous) {
-                        // 익명 사용자를 Google 계정과 연결
-                        console.log("익명 사용자를 Google 계정과 연결 중...");
-                        await linkWithRedirect(currentUser, provider);
+                        // 익명 사용자 로그아웃 후 새로 로그인
+                        console.log("익명 사용자 로그아웃 후 Google 로그인...");
+                        await signOut(auth);
+                        // 잠깐 대기 후 Google 로그인
+                        setTimeout(() => {
+                            signInWithRedirect(auth, provider);
+                        }, 100);
                     } else {
                         // 새로 로그인
                         console.log("Google 로그인 리디렉션 시작...");
@@ -354,6 +361,7 @@
                     }
                 } catch (error) {
                     console.error("Google 로그인 오류:", error);
+                    localStorage.removeItem('teacherLoginAttempt');
                     hideAuthLoading();
                     document.getElementById('teacher-login-btn').style.display = 'block';
                     
@@ -558,14 +566,21 @@
                         const user = result.user;
                         console.log("리디렉션 결과 감지:", user.displayName, user.email);
                         
-                        // 교사로 등록
-                        await registerTeacherInFirestore(user);
+                        // 교사 로그인 시도였는지 확인
+                        const wasTeacherLogin = localStorage.getItem('teacherLoginAttempt');
+                        localStorage.removeItem('teacherLoginAttempt');
+                        
+                        if (wasTeacherLogin) {
+                            console.log("교사 로그인 시도 감지, 교사로 등록...");
+                            await registerTeacherInFirestore(user);
+                        }
                         
                         // UI 업데이트는 onAuthStateChanged에서 처리됨
                         return;
                     }
                 } catch (error) {
                     console.error("리디렉션 결과 처리 오류:", error);
+                    localStorage.removeItem('teacherLoginAttempt');
                     hideAuthLoading();
                     
                     // 특정 오류에 대한 처리
@@ -573,10 +588,6 @@
                         openTeacherCodeModal();
                         document.getElementById('teacher-code-error').innerText = 
                             '이미 다른 방법으로 가입된 계정입니다. 기존 로그인 방법을 사용해주세요.';
-                    } else if (error.code === 'auth/credential-already-in-use') {
-                        console.log("이미 연결된 계정으로 재시도...");
-                        // 다시 익명 로그인 시도
-                        signInAnonymously(auth);
                     } else {
                         openTeacherCodeModal();
                         document.getElementById('teacher-code-error').innerText = 
@@ -600,6 +611,9 @@
                             console.log("Google 사용자 감지:", user.displayName, user.email);
                             
                             try {
+                                // 잠깐 대기 후 교사 상태 확인 (Firestore 동기화 대기)
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                                
                                 const isTeacherStatus = await checkIfTeacher(user.uid);
                                 console.log("교사 상태 확인:", isTeacherStatus);
                                 
@@ -609,7 +623,7 @@
                                     await loadTeacherData(user.uid);
                                 } else {
                                     console.warn("Google 사용자가 교사로 등록되지 않음");
-                                    // 교사로 등록하지 않고 학생 데이터만 로드
+                                    // 학생 데이터 로드
                                     await loadStudentData();
                                 }
                                 authInitialized = true;
