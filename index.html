@@ -50,9 +50,15 @@
             transition: opacity 0.5s ease;
         }
         .highlight {
-            background-color: rgba(57, 255, 20, 0.4);
-            padding: 2px 0;
+            background: linear-gradient(120deg, rgba(57, 255, 20, 0.3) 0%, rgba(57, 255, 20, 0.5) 100%);
+            padding: 2px 4px;
             border-radius: 3px;
+            box-shadow: 0 0 0 1px rgba(57, 255, 20, 0.2);
+            animation: highlightPulse 2s ease-in-out;
+        }
+        @keyframes highlightPulse {
+            0%, 100% { background: linear-gradient(120deg, rgba(57, 255, 20, 0.3) 0%, rgba(57, 255, 20, 0.5) 100%); }
+            50% { background: linear-gradient(120deg, rgba(57, 255, 20, 0.5) 0%, rgba(57, 255, 20, 0.7) 100%); }
         }
         .scrollable-content::-webkit-scrollbar { width: 8px; }
         .scrollable-content::-webkit-scrollbar-track { background: #1f2937; }
@@ -273,9 +279,9 @@
                     item.className = 'slider-item flex flex-col h-full p-1';
                     item.dataset.type = step.type;
                     let nextButtonHtml = (index < steps.length - 1)
-                        ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
+                        ? `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
                         : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
-                    item.innerHTML = `<div class="flex-grow flex flex-col"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button><div class="feedback-container hidden mt-4 flex-grow overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0">${nextButtonHtml}</div>`;
+                    item.innerHTML = `<div class="flex-grow flex flex-col"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full h-32 p-3 bg-gray-800 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 받기</button><div class="feedback-container hidden mt-4 max-h-80 overflow-y-auto scrollable-content p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0">${nextButtonHtml}</div>`;
                     sliderContainer.appendChild(item);
                 });
                 sliderWrapper.appendChild(sliderContainer);
@@ -609,6 +615,30 @@
                 }
             }
 
+            function highlightRelevantText(passageText, highlights) {
+                const passageEl = document.getElementById('modal-passage');
+                
+                if (!highlights || highlights.length === 0) {
+                    passageEl.innerText = passageText;
+                    return;
+                }
+                
+                let highlightedText = passageText;
+                
+                // 하이라이트 텍스트들을 길이 순으로 정렬 (긴 것부터 처리하여 중복 방지)
+                const sortedHighlights = highlights
+                    .filter(h => h && h.trim().length > 0)
+                    .sort((a, b) => b.length - a.length);
+                
+                sortedHighlights.forEach(highlight => {
+                    const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\            function closeTeacherDashboard() { 
+                document.getElementById('teacher-dashboard-modal').classList.')})`, 'gi');
+                    highlightedText = highlightedText.replace(regex, '<span class="highlight">$1</span>');
+                });
+                
+                passageEl.innerHTML = highlightedText;
+            }
+
             function loadTeacherData(uid) {
                 console.log("교사 데이터 로딩 시작:", uid);
                 const passagesColPath = `artifacts/${appId}/users/${uid}/passages`;
@@ -925,7 +955,8 @@
                         example: feedbackContent.similarity[questionType] >= 70 ? 
                             feedbackContent.exemplar_questions[0] : null,
                         rationale: feedbackContent.rationale,
-                        hints: feedbackContent.hints
+                        hints: feedbackContent.hints,
+                        highlights: feedbackContent.relevant_text_highlights || []
                     };
                     
                 } catch (error) {
@@ -942,6 +973,12 @@
                 
                 // 게이지 차트 생성
                 const gaugeHTML = createGaugeChart(feedback.scores);
+                
+                // 지문에 하이라이트 적용
+                if (feedback.highlights && feedback.highlights.length > 0) {
+                    const passage = window.documents[currentDocIndex].passage;
+                    highlightRelevantText(passage, feedback.highlights);
+                }
                 
                 // 피드백 UI 구성
                 let feedbackHTML = `
@@ -993,6 +1030,11 @@
                 
                 container.innerHTML = feedbackHTML;
                 
+                // 피드백 컨테이너가 표시된 후 스크롤을 맨 아래로
+                setTimeout(() => {
+                    container.scrollTop = container.scrollHeight;
+                }, 100);
+                
                 // 게이지 애니메이션 시작
                 setTimeout(() => {
                     animateGauges(feedback.scores);
@@ -1000,11 +1042,9 @@
                 
                 // 70% 이상이면 다음 버튼 활성화
                 if (isPassing) {
-                    const nextButton = button.nextElementSibling.nextElementSibling;
+                    const nextButton = currentSlider.querySelector('.next-btn');
                     if (nextButton) {
                         nextButton.classList.remove('hidden');
-                        nextButton.classList.remove('text-gray-400');
-                        nextButton.classList.add('bg-green-600', 'hover:bg-green-700', 'text-white');
                     }
                 }
                 
