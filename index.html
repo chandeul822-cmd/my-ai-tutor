@@ -199,6 +199,7 @@
             let isTeacher = false;
             const TEACHER_SECRET_CODE = '0822';
 
+            // ... All other UI functions (renderDocumentCards, createSlider, openModal, etc.) remain the same ...
             const typeTranslations = { factual: '사실성', divergent: '발산성', creative: '창의성' };
             const getCompletionStatus = () => JSON.parse(localStorage.getItem('aiTutorCompletion') || '{}');
             const setCompletionStatus = (docId) => {
