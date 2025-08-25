@@ -295,14 +295,35 @@
                     const item = document.createElement('div');
                     item.className = 'slider-item flex flex-col h-full';
                     item.dataset.type = step.type;
-                    let nextButtonHtml = (index < steps.length - 1)
-                        ? `<button class="next-btn hidden mt-4 w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-lg transition-colors" onclick="app.nextStep()">다음 단계로</button>`
-                        : `<button class="next-btn hidden mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.completeAndCloseModal()">학습 완료</button>`;
+
+                    const prevButtonHtml = (index > 0) 
+                        ? `<button class="w-1/2 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg transition-colors" onclick="app.previousStep()">이전 단계</button>` 
+                        : '';
+
+                    const nextButtonWidth = index > 0 ? 'w-1/2' : 'w-full';
+                    const nextButtonBaseClasses = `next-btn hidden ${nextButtonWidth} font-bold py-3 rounded-lg transition-colors`;
                     
+                    const nextButtonHtml = (index < steps.length - 1)
+                        ? `<button class="${nextButtonBaseClasses} bg-gray-700 text-gray-400" onclick="app.nextStep()">다음 단계로</button>`
+                        : `<button class="${nextButtonBaseClasses} bg-green-600 hover:bg-green-700 text-white" onclick="app.completeAndCloseModal()">학습 완료</button>`;
+
                     const feedbackButtonColor = buttonColors[step.type] || 'bg-gray-600';
                     const ringColor = ringColors[step.type] || 'focus:ring-gray-500';
 
-                    item.innerHTML = `<div class="flex-grow flex flex-col overflow-y-auto scrollable-content p-4"><h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4><p class="text-sm text-gray-400 mb-4">${step.description}</p><textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 ${ringColor} focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea><button class="mt-4 w-full ${feedbackButtonColor} text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 요청하기</button><div class="feedback-container hidden mt-4 p-4 bg-gray-800/50 rounded-lg"></div></div><div class="flex-shrink-0 p-4 pt-0">${nextButtonHtml}</div>`;
+                    item.innerHTML = `
+                        <div class="flex-grow flex flex-col overflow-y-auto scrollable-content p-4">
+                            <h4 class="text-xl font-bold mb-2 text-gray-200">${step.title}</h4>
+                            <p class="text-sm text-gray-400 mb-4">${step.description}</p>
+                            <textarea class="w-full flex-grow p-3 bg-gray-800 rounded-lg focus:ring-2 ${ringColor} focus:outline-none text-gray-200" placeholder="여기에 질문을 입력하세요..."></textarea>
+                            <button class="mt-4 w-full ${feedbackButtonColor} text-white font-bold py-3 rounded-lg transition-colors" onclick="app.getFeedback(this)">AI 피드백 요청하기</button>
+                            <div class="feedback-container hidden mt-4 p-4 bg-gray-800/50 rounded-lg"></div>
+                        </div>
+                        <div class="flex-shrink-0 p-4 pt-0">
+                            <div class="flex gap-4 mt-4">
+                                ${prevButtonHtml}
+                                ${nextButtonHtml}
+                            </div>
+                        </div>`;
                     sliderContainer.appendChild(item);
                 });
                 sliderWrapper.appendChild(sliderContainer);
@@ -874,6 +895,11 @@
 
             // 전역 함수 등록 (HTML에서 호출용)
             window.app = {
+                previousStep: () => {
+                    if (currentStep > 1) {
+                        goToStep(currentStep - 1);
+                    }
+                },
                 nextStep: () => {
                     if (currentStep < 3) {
                         goToStep(currentStep + 1);
